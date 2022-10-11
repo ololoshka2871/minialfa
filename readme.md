@@ -5,7 +5,7 @@
 ### Display
 SPI:
 MOSI - D1 - GPIO23
-MISO - NC - GPIO19
+MISO - NC - -
 SCK - D0 - GPIO18
 SS - CS - GPIO5
 
