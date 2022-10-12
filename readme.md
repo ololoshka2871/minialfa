@@ -21,9 +21,9 @@ SCL - GPIO22
 
 ### Encoder
 GPIO:
-BUTTON - GPIO32
-V1 - GPIO35
-V2 - GPIO34
+BUTTON - GPIO27
+V1 - GPIO26
+V2 - GPIO25
 
 
 # JTAG debugging
