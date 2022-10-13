@@ -32,3 +32,7 @@ build-std = ["std", "panic_abort"]
 ESP_IDF_VERSION = { value = "branch:release/v4.4" }
 # Enables the esp-idf-sys "native" build feature (`cargo build --features native`) to build against ESP-IDF master (mainline)
 #ESP_IDF_VERSION = { value = "master" }
+
+[alias]
+f = "espflash flash -p /dev/ttyUSB0"
+m = "espmonitor --target xtensa-esp32-espidf /dev/ttyUSB0"

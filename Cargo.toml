@@ -11,7 +11,7 @@ debug = true # Symbols are nice and they don't increase the size on Flash
 opt-level = "s"
 
 [profile.dev]
-#lto = true
+lto = false
 debug = true # Symbols are nice and they don't increase the size on Flash
 opt-level = "z"
 
@@ -30,7 +30,7 @@ esp-idf-hal = "0.38.1"
 # display
 display-interface = "0.4"
 display-interface-spi = "0.4"
-ssd1306 = "0.7"
+ssd1309 = "0.3"
 embedded-graphics = "0.7" 
 
 # encoder

@@ -1,10 +1,9 @@
-/*
 mod display;
 mod i2c_sensor;
-*/
 
+use embedded_hal::prelude::_embedded_hal_blocking_i2c_WriteRead;
 use esp_idf_hal::peripherals::Peripherals;
-/*
+
 use std::time::Duration;
 
 use embedded_hal::digital::v2::InputPin;
@@ -17,8 +16,6 @@ use esp_idf_hal::i2c::I2cError;
 use esp_idf_hal::prelude::*;
 use esp_idf_hal::spi;
 
-use ssd1306::prelude::DisplayConfig; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
-*/
 use esp_idf_sys as _;
 
 fn main() {
@@ -27,6 +24,7 @@ fn main() {
     esp_idf_sys::link_patches();
 
     let dp = Peripherals::take().unwrap();
+
     /*
     {
         println!("Initialising rotary encoder");
@@ -68,11 +66,12 @@ fn main() {
         });
     }
     */
-
     /*
     {
-        println!("Initialising display");
-        let config = <spi::config::Config as Default>::default().baudrate(10.MHz().into());
+        println!("Initialising display...");
+        let config = <spi::config::Config as Default>::default()
+            .write_only(true)
+            .baudrate(5.MHz().into());
 
         let di = display_interface_spi::SPIInterface::new(
             spi::Master::<
@@ -92,19 +91,14 @@ fn main() {
                 config,
             )
             .expect("Failed to create spi device"),
-            dp.pins.gpio2.into_output().unwrap(), // DC
-            dp.pins.gpio5.into_output().unwrap(), // CS
+            dp.pins.gpio2.into_output().unwrap(),  // DC
+            dp.pins.gpio21.into_output().unwrap(), // CS
         );
 
-        let mut disp = ssd1306::Ssd1306::new(
-            di,
-            ssd1306::size::DisplaySize128x64,
-            ssd1306::rotation::DisplayRotation::Rotate0,
-        )
-        .into_buffered_graphics_mode();
-
+        let mut disp: ssd1309::prelude::GraphicsMode<_> =
+            ssd1309::Builder::new().connect(di).into();
         {
-            let mut display_reset_pin = dp.pins.gpio4.into_output().unwrap();
+            let mut display_reset_pin = dp.pins.gpio22.into_output().unwrap();
             let mut delay_provider = delay::FreeRtos {};
             disp.reset(&mut display_reset_pin, &mut delay_provider)
                 .unwrap();
@@ -114,10 +108,19 @@ fn main() {
         std::thread::spawn(move || display::dispaly_thread(disp));
     }
     */
-
-    /*
     {
-        println!("Initialising sensors");
+        extern "C" {
+            fn i2c_set_timeout(
+                i2c_num: esp_idf_sys::i2c_port_t,
+                timeout: esp_idf_sys::c_types::c_int,
+            ) -> esp_idf_sys::esp_err_t;
+            fn i2c_get_timeout(
+                i2c_num: esp_idf_sys::i2c_port_t,
+                timeout: *mut esp_idf_sys::c_types::c_int,
+            ) -> esp_idf_sys::esp_err_t;
+        }
+
+        println!("Initialising sensors...");
         fn print_read_failed(addr: u8, e: I2cError) {
             println!("Failed to read I2C sensor at {}: {}", addr, e);
         }
@@ -126,15 +129,22 @@ fn main() {
         let mut i2c = i2c::Master::new(
             dp.i2c0,
             i2c::MasterPins {
-                sda: dp.pins.gpio21,
-                scl: dp.pins.gpio22,
+                sda: dp.pins.gpio26,
+                scl: dp.pins.gpio25,
             },
             config,
         )
         .expect("Failed to init i2c");
 
+        unsafe {
+            let mut ct: esp_idf_sys::c_types::c_int = 0;
+            i2c_get_timeout(0, &mut ct);
+            println!("Current i2c strech timout: {}", ct);
+            i2c_set_timeout(0, 50000);
+        }
+
         let p_sensor = i2c_sensor::I2CSensor::new(11);
-        let f_sensor = i2c_sensor::I2CSensor::new(13);
+        let f_sensor = i2c_sensor::I2CSensor::new(12);
 
         std::thread::spawn(move || loop {
             let p = match p_sensor.read(&mut i2c) {
@@ -144,6 +154,7 @@ fn main() {
                     continue;
                 }
             };
+
             let f = match f_sensor.read(&mut i2c) {
                 Ok(v) => v.f_p,
                 Err(e) => {
@@ -156,6 +167,6 @@ fn main() {
             std::thread::sleep(Duration::from_millis(100));
         });
     }
-    */
+
     println!("Ready!");
 }
