@@ -2,7 +2,6 @@ mod display;
 mod i2c_sensor;
 
 use esp_idf_hal::peripherals::Peripherals;
-use ssd1306::prelude::DisplayConfig;
 
 use std::time::Duration;
 
@@ -94,12 +93,8 @@ fn main() {
             dp.pins.gpio21.into_output().unwrap(), // DC
         );
 
-        let mut disp = ssd1306::Ssd1306::new(
-            di,
-            ssd1306::size::DisplaySize128x64,
-            ssd1306::rotation::DisplayRotation::Rotate0,
-        )
-        .into_buffered_graphics_mode();
+        let mut disp: ssd1309::prelude::GraphicsMode<_> =
+            ssd1309::Builder::new().connect(di).into();
         {
             let mut display_reset_pin = dp.pins.gpio22.into_output().unwrap();
             let mut delay_provider = delay::FreeRtos {};
@@ -110,7 +105,8 @@ fn main() {
 
         std::thread::Builder::new()
             .stack_size(10 * 1024)
-            .spawn(move || display::dispaly_thread(disp)).unwrap();
+            .spawn(move || display::dispaly_thread(disp))
+            .unwrap();
     }
 
     {
@@ -154,25 +150,26 @@ fn main() {
         std::thread::Builder::new()
             .stack_size(10 * 1024)
             .spawn(move || loop {
-            let p = match p_sensor.read(&mut i2c) {
-                Ok(v) => v.pressure,
-                Err(e) => {
-                    print_read_failed(p_sensor.address(), e);
-                    continue;
-                }
-            };
+                let p = match p_sensor.read(&mut i2c) {
+                    Ok(v) => v.pressure,
+                    Err(e) => {
+                        print_read_failed(p_sensor.address(), e);
+                        continue;
+                    }
+                };
 
-            let f = match f_sensor.read(&mut i2c) {
-                Ok(v) => v.f_p,
-                Err(e) => {
-                    print_read_failed(f_sensor.address(), e);
-                    continue;
-                }
-            };
+                let f = match f_sensor.read(&mut i2c) {
+                    Ok(v) => v.f_p,
+                    Err(e) => {
+                        print_read_failed(f_sensor.address(), e);
+                        continue;
+                    }
+                };
 
-            println!("P = {}, F = {}", p, f);
-            std::thread::sleep(Duration::from_millis(100));
-        }).unwrap();
+                println!("P = {}, F = {}", p, f);
+                std::thread::sleep(Duration::from_millis(100));
+            })
+            .unwrap();
     }
 
     println!("Ready!");

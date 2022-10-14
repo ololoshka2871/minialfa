@@ -3,24 +3,25 @@ use std::time::Duration;
 use embedded_graphics::mono_font;
 use embedded_graphics::mono_font::MonoTextStyleBuilder;
 use embedded_graphics::pixelcolor::BinaryColor;
+use embedded_graphics::prelude::Dimensions;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::prelude::Size;
 use embedded_graphics::primitives::Primitive;
 use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::text;
 use embedded_graphics::text::Alignment;
 use embedded_graphics::text::Baseline;
 use embedded_graphics::text::Text;
 use embedded_graphics::Drawable;
 
+use embedded_graphics::text::renderer::TextRenderer;
 use num::rational::Ratio;
+use ssd1309::prelude::GraphicsMode;
 
-pub fn dispaly_thread<DI, SIZE>(
-    mut disp: ssd1306::Ssd1306<DI, SIZE, ssd1306::mode::BufferedGraphicsMode<SIZE>>,
-) -> !
+pub fn dispaly_thread<DI>(mut disp: GraphicsMode<DI>) -> !
 where
     DI: display_interface::WriteOnlyDataCommand,
-    SIZE: ssd1306::size::DisplaySize,
 {
     draw_initial_screen(&mut disp).expect("Failed to draw init screeen");
 
@@ -29,12 +30,11 @@ where
     }
 }
 
-fn draw_initial_screen<DI, SIZE>(
-    disp: &mut ssd1306::Ssd1306<DI, SIZE, ssd1306::mode::BufferedGraphicsMode<SIZE>>,
+fn draw_initial_screen<DI>(
+    disp: &mut GraphicsMode<DI>,
 ) -> Result<(), display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
-    SIZE: ssd1306::size::DisplaySize,
 {
     let big_font = MonoTextStyleBuilder::new()
         .font(&mono_font::iso_8859_5::FONT_10X20)
@@ -46,8 +46,8 @@ where
         .text_color(BinaryColor::On)
         .build();
 
-    let (display_w, display_h) = {
-        let d = disp.dimensions();
+    let (display_w, _display_h) = {
+        let d = disp.get_dimensions();
         (d.0 as i32, d.1 as i32)
     };
 
@@ -65,34 +65,19 @@ where
     )
     .draw(disp)?;
 
-    Rectangle::new(
-        Point::new(
-            10,
-            40,
-        ),
-        Size::new(
-            display_w as u32 - 10,
-            big_font.font.character_size.height + 5,
-        ),
-    )
-    .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
-    .draw(disp)?;
+    let begin_text = Text::with_baseline("Начать", Point::new(36, 31), big_font, Baseline::Top);
 
-    Text::with_alignment(
-        "Нажмите старт",
-        Point::new(
-            (display_w / 2).into(),
-            big_font.font.character_size.height as i32 + 8,
-        ),
-        big_font,
-        Alignment::Center,
-    )
-    .draw(disp)?;
+    gen_text_bounding_rect(&begin_text, true)
+        .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+        .draw(disp)?;
+
+    begin_text.draw(disp)?;
 
     Rectangle::new(
         Point::new(
             0,
-            disp.dimensions().1 as i32 - small_font_italic.font.character_size.height as i32 + 1,
+            disp.get_dimensions().1 as i32 - small_font_italic.font.character_size.height as i32
+                + 1,
         ),
         Size::new(
             display_w as u32,
@@ -106,7 +91,7 @@ where
         "СКТБ ЭлПА(c)",
         Point::new(
             (Ratio::<i32>::new(1, 4) * display_w).to_integer() as i32,
-            disp.dimensions().1 as i32 - 2,
+            disp.get_dimensions().1 as i32 - 2,
         ),
         MonoTextStyleBuilder::from(&small_font_italic)
             .background_color(BinaryColor::On)
@@ -118,4 +103,16 @@ where
     disp.flush()?;
 
     Ok(())
+}
+
+fn gen_text_bounding_rect<T: Dimensions>(text: &T, is_russian_text: bool) -> Rectangle {
+    let mut bb = text.bounding_box();
+
+    if is_russian_text {
+        bb.size.width /= 2;
+    }
+    bb.top_left.x -= 2;
+    bb.size.width += 3 * 2;
+
+    bb
 }
