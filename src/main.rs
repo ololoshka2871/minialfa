@@ -2,6 +2,7 @@ mod display;
 mod i2c_sensor;
 
 use esp_idf_hal::peripherals::Peripherals;
+use ssd1306::prelude::DisplayConfig;
 
 use std::time::Duration;
 
@@ -93,8 +94,12 @@ fn main() {
             dp.pins.gpio21.into_output().unwrap(), // DC
         );
 
-        let mut disp: ssd1309::prelude::GraphicsMode<_> =
-            ssd1309::Builder::new().connect(di).into();
+        let mut disp = ssd1306::Ssd1306::new(
+            di,
+            ssd1306::size::DisplaySize128x64,
+            ssd1306::rotation::DisplayRotation::Rotate0,
+        )
+        .into_buffered_graphics_mode();
         {
             let mut display_reset_pin = dp.pins.gpio22.into_output().unwrap();
             let mut delay_provider = delay::FreeRtos {};
@@ -103,11 +108,11 @@ fn main() {
         }
         disp.init().unwrap();
 
-        /*std::thread::spawn(move || */
-        display::dispaly_thread(disp) //);
+        std::thread::Builder::new()
+            .stack_size(10 * 1024)
+            .spawn(move || display::dispaly_thread(disp)).unwrap();
     }
 
-    /*
     {
         extern "C" {
             fn i2c_set_timeout(
@@ -146,7 +151,9 @@ fn main() {
         let p_sensor = i2c_sensor::I2CSensor::new(11);
         let f_sensor = i2c_sensor::I2CSensor::new(12);
 
-        std::thread::spawn(move || loop {
+        std::thread::Builder::new()
+            .stack_size(10 * 1024)
+            .spawn(move || loop {
             let p = match p_sensor.read(&mut i2c) {
                 Ok(v) => v.pressure,
                 Err(e) => {
@@ -165,9 +172,8 @@ fn main() {
 
             println!("P = {}, F = {}", p, f);
             std::thread::sleep(Duration::from_millis(100));
-        });
+        }).unwrap();
     }
-    */
 
     println!("Ready!");
 }

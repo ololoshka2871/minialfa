@@ -8,6 +8,7 @@ use embedded_graphics::prelude::Size;
 use embedded_graphics::primitives::Primitive;
 use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::text::Alignment;
 use embedded_graphics::text::Baseline;
 use embedded_graphics::text::Text;
 use embedded_graphics::Drawable;
@@ -45,29 +46,46 @@ where
         .text_color(BinaryColor::On)
         .build();
 
-    let display_w = disp.dimensions().0 as i32;
+    let (display_w, display_h) = {
+        let d = disp.dimensions();
+        (d.0 as i32, d.1 as i32)
+    };
 
     disp.flush().unwrap();
 
-    Text::with_baseline("Измеритель", Point::new(18, -3), big_font, Baseline::Top).draw(disp)?;
-    Text::with_baseline(
-        "динамического",
+    Text::with_baseline("Мини-Альфа", Point::new(18, -3), big_font, Baseline::Top).draw(disp)?;
+    Text::with_alignment(
+        "v2.0",
         Point::new(
-            0, //(display_h / 2).into(),
-            big_font.font.character_size.height as i32 - 3 - 3,
+            (display_w / 2).into(),
+            big_font.font.character_size.height as i32 + 8,
         ),
         big_font,
-        Baseline::Top,
+        Alignment::Center,
     )
     .draw(disp)?;
-    Text::with_baseline(
-        "сопротивления",
+
+    Rectangle::new(
         Point::new(
-            0, //(display_h / 2).into(),
-            (big_font.font.character_size.height as i32 - 3) * 2 - 3,
+            10,
+            40,
+        ),
+        Size::new(
+            display_w as u32 - 10,
+            big_font.font.character_size.height + 5,
+        ),
+    )
+    .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+    .draw(disp)?;
+
+    Text::with_alignment(
+        "Нажмите старт",
+        Point::new(
+            (display_w / 2).into(),
+            big_font.font.character_size.height as i32 + 8,
         ),
         big_font,
-        Baseline::Top,
+        Alignment::Center,
     )
     .draw(disp)?;
 
