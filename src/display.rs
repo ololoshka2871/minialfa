@@ -15,14 +15,16 @@ use num::rational::Ratio;
 
 use ssd1309::prelude::GraphicsMode;
 
-pub fn dispaly_thread<DI>(mut disp: GraphicsMode<DI>) -> !
+pub fn dispaly_thread<DI>(mut disp: GraphicsMode<DI>) /*-> !*/
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
     draw_initial_screen(&mut disp).expect("Failed to draw init screeen");
+    /*
     loop {
         std::thread::sleep(Duration::from_millis(100));
     }
+    */
 }
 
 fn draw_initial_screen<DI>(

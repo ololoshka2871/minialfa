@@ -1,12 +1,10 @@
 mod display;
 mod i2c_sensor;
 
-use embedded_hal::prelude::_embedded_hal_blocking_i2c_WriteRead;
 use esp_idf_hal::peripherals::Peripherals;
 
 use std::time::Duration;
 
-use embedded_hal::digital::v2::InputPin;
 use esp_idf_hal::delay;
 use esp_idf_hal::gpio::Input;
 use esp_idf_hal::gpio::Output;
@@ -66,33 +64,33 @@ fn main() {
         });
     }
     */
-    /*
+
     {
         println!("Initialising display...");
-        let config = <spi::config::Config as Default>::default()
+        let config = spi::config::Config::new()
             .write_only(true)
-            .baudrate(5.MHz().into());
+            // mode 0 - defailt
+            .baudrate(1.MHz().into());
 
-        let di = display_interface_spi::SPIInterface::new(
+        let di = display_interface_spi::SPIInterfaceNoCS::new(
             spi::Master::<
                 spi::SPI2,
                 _,
                 _,
-                esp_idf_hal::gpio::Gpio0<Input>,  // заглушка
-                esp_idf_hal::gpio::Gpio1<Output>, // заглушка
+                esp_idf_hal::gpio::Gpio0<Input>, // заглушка
+                _,
             >::new(
                 dp.spi2,
                 spi::Pins {
                     sclk: dp.pins.gpio18,
                     sdo: dp.pins.gpio23,
                     sdi: None,
-                    cs: None,
+                    cs: Some(dp.pins.gpio5.into_output().unwrap()),
                 },
                 config,
             )
             .expect("Failed to create spi device"),
-            dp.pins.gpio2.into_output().unwrap(),  // DC
-            dp.pins.gpio21.into_output().unwrap(), // CS
+            dp.pins.gpio21.into_output().unwrap(), // DC
         );
 
         let mut disp: ssd1309::prelude::GraphicsMode<_> =
@@ -105,9 +103,11 @@ fn main() {
         }
         disp.init().unwrap();
 
-        std::thread::spawn(move || display::dispaly_thread(disp));
+        /*std::thread::spawn(move || */
+        display::dispaly_thread(disp) //);
     }
-    */
+
+    /*
     {
         extern "C" {
             fn i2c_set_timeout(
@@ -167,6 +167,7 @@ fn main() {
             std::thread::sleep(Duration::from_millis(100));
         });
     }
+    */
 
     println!("Ready!");
 }
