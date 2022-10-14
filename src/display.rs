@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use embedded_graphics::{
     mono_font::{self, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
@@ -13,26 +11,39 @@ use num::rational::Ratio;
 
 use ssd1309::prelude::GraphicsMode;
 
+use crate::controller::DisplayCommand;
+
 pub fn dispaly_thread<DI>(
     mut disp: GraphicsMode<DI>,
-    _disp_channel: crossbeam::channel::Receiver<crate::controller::DisplayCommand>,
+    disp_channel: crossbeam::channel::Receiver<crate::controller::DisplayCommand>,
 ) -> !
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
-    draw_initial_screen(&mut disp).expect("Failed to draw init screeen");
-
     loop {
-        std::thread::sleep(Duration::from_millis(100));
+        match disp_channel.recv() {
+            Ok(DisplayCommand::TitleScreen { option, selected }) => {
+                draw_title_screen(&mut disp, option, selected)
+            }
+            Err(e) => {
+                println!("Display cmd recive error: {}", e);
+                Ok(())
+            }
+        }
+        .expect("Failed to draw frame");
     }
 }
 
-fn draw_initial_screen<DI>(
+fn draw_title_screen<DI>(
     disp: &mut GraphicsMode<DI>,
+    text: &'static str,
+    selected: bool,
 ) -> Result<(), display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
+    disp.clear();
+
     let big_font = MonoTextStyleBuilder::new()
         .font(&mono_font::iso_8859_5::FONT_10X20)
         .text_color(BinaryColor::On)
@@ -62,7 +73,21 @@ where
     )
     .draw(disp)?;
 
-    let begin_text = Text::with_baseline("Начать", Point::new(36, 31), big_font, Baseline::Top);
+    let begin_text = Text::with_baseline(
+        text,
+        Point::new(36, 31),
+        {
+            if selected {
+                MonoTextStyleBuilder::from(&big_font)
+                    .background_color(BinaryColor::On)
+                    .text_color(BinaryColor::Off)
+                    .build()
+            } else {
+                big_font
+            }
+        },
+        Baseline::Top,
+    );
 
     gen_text_bounding_rect(&begin_text, true)
         .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))

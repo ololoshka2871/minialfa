@@ -1,3 +1,5 @@
+#![feature(mixed_integer_ops)]
+
 mod controller;
 mod display;
 mod i2c_sensor;
