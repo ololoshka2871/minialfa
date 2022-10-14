@@ -29,6 +29,8 @@ embedded-svc = { version = "0.22", default-features = false }
 embedded-hal = "0.2"
 esp-idf-hal = "0.38.1"
 
+crossbeam = "0.8"
+
 # display
 display-interface = "0.4"
 display-interface-spi = "0.4"

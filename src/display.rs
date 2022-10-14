@@ -13,7 +13,10 @@ use num::rational::Ratio;
 
 use ssd1309::prelude::GraphicsMode;
 
-pub fn dispaly_thread<DI>(mut disp: GraphicsMode<DI>) -> !
+pub fn dispaly_thread<DI>(
+    mut disp: GraphicsMode<DI>,
+    _disp_channel: crossbeam::channel::Receiver<crate::controller::DisplayCommand>,
+) -> !
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
