@@ -1,22 +1,16 @@
 use std::time::Duration;
 
-use embedded_graphics::mono_font;
-use embedded_graphics::mono_font::MonoTextStyleBuilder;
-use embedded_graphics::pixelcolor::BinaryColor;
-use embedded_graphics::prelude::Dimensions;
-use embedded_graphics::prelude::Point;
-use embedded_graphics::prelude::Size;
-use embedded_graphics::primitives::Primitive;
-use embedded_graphics::primitives::PrimitiveStyle;
-use embedded_graphics::primitives::Rectangle;
-use embedded_graphics::text;
-use embedded_graphics::text::Alignment;
-use embedded_graphics::text::Baseline;
-use embedded_graphics::text::Text;
-use embedded_graphics::Drawable;
+use embedded_graphics::{
+    mono_font::{self, MonoTextStyleBuilder},
+    pixelcolor::BinaryColor,
+    prelude::{Dimensions, Point, Size},
+    primitives::{Primitive, PrimitiveStyle, Rectangle},
+    text::{Alignment, Baseline, Text},
+    Drawable,
+};
 
-use embedded_graphics::text::renderer::TextRenderer;
 use num::rational::Ratio;
+
 use ssd1309::prelude::GraphicsMode;
 
 pub fn dispaly_thread<DI>(mut disp: GraphicsMode<DI>) -> !
