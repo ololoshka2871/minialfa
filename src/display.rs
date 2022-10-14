@@ -11,27 +11,29 @@ use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::text::Baseline;
 use embedded_graphics::text::Text;
 use embedded_graphics::Drawable;
+
 use num::rational::Ratio;
 
-use ssd1309::prelude::GraphicsMode;
-
-pub fn dispaly_thread<DI>(mut disp: GraphicsMode<DI>) /*-> !*/
+pub fn dispaly_thread<DI, SIZE>(
+    mut disp: ssd1306::Ssd1306<DI, SIZE, ssd1306::mode::BufferedGraphicsMode<SIZE>>,
+) -> !
 where
     DI: display_interface::WriteOnlyDataCommand,
+    SIZE: ssd1306::size::DisplaySize,
 {
     draw_initial_screen(&mut disp).expect("Failed to draw init screeen");
-    /*
+
     loop {
         std::thread::sleep(Duration::from_millis(100));
     }
-    */
 }
 
-fn draw_initial_screen<DI>(
-    disp: &mut GraphicsMode<DI>,
+fn draw_initial_screen<DI, SIZE>(
+    disp: &mut ssd1306::Ssd1306<DI, SIZE, ssd1306::mode::BufferedGraphicsMode<SIZE>>,
 ) -> Result<(), display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
+    SIZE: ssd1306::size::DisplaySize,
 {
     let big_font = MonoTextStyleBuilder::new()
         .font(&mono_font::iso_8859_5::FONT_10X20)
@@ -43,7 +45,7 @@ where
         .text_color(BinaryColor::On)
         .build();
 
-    let display_w = disp.get_dimensions().0 as i32;
+    let display_w = disp.dimensions().0 as i32;
 
     disp.flush().unwrap();
 
@@ -72,7 +74,7 @@ where
     Rectangle::new(
         Point::new(
             0,
-            disp.get_dimensions().1 as i32 - small_font_italic.font.character_size.height as i32 + 1,
+            disp.dimensions().1 as i32 - small_font_italic.font.character_size.height as i32 + 1,
         ),
         Size::new(
             display_w as u32,
@@ -86,7 +88,7 @@ where
         "СКТБ ЭлПА(c)",
         Point::new(
             (Ratio::<i32>::new(1, 4) * display_w).to_integer() as i32,
-            disp.get_dimensions().1 as i32 - 2,
+            disp.dimensions().1 as i32 - 2,
         ),
         MonoTextStyleBuilder::from(&small_font_italic)
             .background_color(BinaryColor::On)
