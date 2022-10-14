@@ -228,7 +228,7 @@ where
     let config = spi::config::Config::new()
         .write_only(true)
         // mode 0 - defailt
-        .baudrate(1.MHz().into());
+        .baudrate(10.MHz().into());
 
     let di = display_interface_spi::SPIInterfaceNoCS::new(
         spi::Master::<

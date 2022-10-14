@@ -59,8 +59,6 @@ where
         (d.0 as i32, d.1 as i32)
     };
 
-    disp.flush().unwrap();
-
     Text::with_baseline("Мини-Альфа", Point::new(18, -3), big_font, Baseline::Top).draw(disp)?;
     Text::with_alignment(
         "v2.0",
