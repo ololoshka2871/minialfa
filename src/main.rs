@@ -1,4 +1,5 @@
 #![feature(mixed_integer_ops)]
+#![feature(derive_default_enum)]
 
 mod controller;
 mod display;

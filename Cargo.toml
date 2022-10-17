@@ -23,6 +23,8 @@ esp-idf-sys = { version = "0.31.9", features = ["binstart"] }
 esp-idf-svc = "0.42"
 
 num = { version = "0.4", default-features = false, features = ["alloc"] }
+num-derive = "0.3"
+num-traits = { version = "0.2", default-features = false }
 anyhow = "1"
 
 embedded-svc = { version = "0.22", default-features = false }

@@ -3,7 +3,7 @@ use embedded_graphics::{
     pixelcolor::BinaryColor,
     prelude::{Dimensions, Point, Size},
     primitives::{Primitive, PrimitiveStyle, Rectangle, Triangle},
-    text::{Alignment, Baseline, Text},
+    text::{Alignment, Baseline, Text, TextStyleBuilder},
     Drawable,
 };
 
@@ -12,6 +12,8 @@ use num::rational::Ratio;
 use ssd1309::prelude::GraphicsMode;
 
 use crate::controller::DisplayCommand;
+
+use super::controller::SelectedParameter;
 
 pub fn dispaly_thread<DI>(
     mut disp: GraphicsMode<DI>,
@@ -24,6 +26,9 @@ where
         match disp_channel.recv() {
             Ok(DisplayCommand::TitleScreen { option, selected }) => {
                 draw_title_screen(&mut disp, option, selected)
+            }
+            Ok(DisplayCommand::SetupMenu { values, selected }) => {
+                draw_menu(&mut disp, values, selected)
             }
             Err(e) => {
                 println!("Display cmd recive error: {}", e);
@@ -98,7 +103,7 @@ where
         &button,
         5,
         -1,
-        3,
+        5,
         PrimitiveStyle::with_fill(BinaryColor::On),
     )?;
 
@@ -130,6 +135,166 @@ where
         "СКТБ ЭлПА(c)",
         Point::new(
             (Ratio::<i32>::new(1, 4) * display_w).to_integer() as i32,
+            display.get_dimensions().1 as i32 - 2,
+        ),
+        MonoTextStyleBuilder::from(&small_font_italic)
+            .background_color(BinaryColor::On)
+            .text_color(BinaryColor::Off)
+            .build(),
+    )
+    .draw(display)?;
+
+    display.flush()?;
+
+    Ok(())
+}
+
+/// ```norun
+/// Порог      1 mmHg
+/// Период     100 мс
+/// Сохранить и выйти
+///
+///      Настройки
+/// ```
+fn draw_menu<DI>(
+    display: &mut GraphicsMode<DI>,
+    values: super::controller::Parameters,
+    selected_parameter: SelectedParameter,
+) -> Result<(), display_interface::DisplayError>
+where
+    DI: display_interface::WriteOnlyDataCommand,
+{
+    display.clear();
+
+    let small_font_italic = MonoTextStyleBuilder::new()
+        .font(&mono_font::iso_8859_5::FONT_6X13_ITALIC)
+        .text_color(BinaryColor::On)
+        .build();
+    let small_font = MonoTextStyleBuilder::new()
+        .font(&mono_font::iso_8859_5::FONT_6X13)
+        .text_color(BinaryColor::On)
+        .build();
+    let small_font_selected = MonoTextStyleBuilder::from(&small_font)
+        .background_color(BinaryColor::On)
+        .text_color(BinaryColor::Off)
+        .build();
+
+    let (display_w, _display_h) = {
+        let d = display.get_dimensions();
+        (d.0 as i32, d.1 as i32)
+    };
+
+    let pos = Text::with_baseline(
+        " Порог ",
+        Point::new(5, 2),
+        if selected_parameter == SelectedParameter::Threshold {
+            small_font_selected
+        } else {
+            small_font
+        },
+        Baseline::Top,
+    )
+    .draw(display)?;
+
+    let tv = format!("{:0.0} mmHg", values.threshold);
+    let value = Text::with_text_style(
+        tv.as_str(),
+        Point::new(display_w - 10, pos.y),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    );
+
+    if selected_parameter == SelectedParameter::Threshold {
+        let rect = gen_text_bounding_rect(&value, false);
+        draw_arrows_to_rect(
+            display,
+            &rect,
+            3,
+            -1,
+            2,
+            PrimitiveStyle::with_fill(BinaryColor::On),
+        )?;
+        rect.into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .draw(display)?;
+    }
+
+    value.draw(display)?;
+
+    let pos = Text::with_baseline(
+        " Интервал ",
+        Point::new(5, 2 + (small_font.font.character_size.height + 1) as i32),
+        if selected_parameter == SelectedParameter::UpdatePeriodMs {
+            small_font_selected
+        } else {
+            small_font
+        },
+        Baseline::Top,
+    )
+    .draw(display)?;
+
+    let uv = format!("{} ms", values.update_period_ms);
+    let value = Text::with_text_style(
+        uv.as_str(),
+        Point::new(display_w - 10, pos.y),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    );
+
+    if selected_parameter == SelectedParameter::UpdatePeriodMs {
+        let rect = gen_text_bounding_rect(&value, false);
+        draw_arrows_to_rect(
+            display,
+            &rect,
+            3,
+            -1,
+            2,
+            PrimitiveStyle::with_fill(BinaryColor::On),
+        )?;
+        rect.into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .draw(display)?;
+    }
+
+    value.draw(display)?;
+
+    Text::with_baseline(
+        " Сохранить и выйти ",
+        Point::new(
+            5,
+            2 + ((small_font.font.character_size.height + 1) * 2) as i32,
+        ),
+        if selected_parameter == SelectedParameter::SaveAndExit {
+            small_font_selected
+        } else {
+            small_font
+        },
+        Baseline::Top,
+    )
+    .draw(display)?;
+
+    Rectangle::new(
+        Point::new(
+            0,
+            display.get_dimensions().1 as i32 - small_font_italic.font.character_size.height as i32
+                + 1,
+        ),
+        Size::new(
+            display_w as u32,
+            small_font_italic.font.character_size.height - 1,
+        ),
+    )
+    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+    .draw(display)?;
+
+    Text::new(
+        "Настройки",
+        Point::new(
+            (Ratio::<i32>::new(1, 3) * display_w).to_integer() as i32,
             display.get_dimensions().1 as i32 - 2,
         ),
         MonoTextStyleBuilder::from(&small_font_italic)
