@@ -2,7 +2,7 @@ use embedded_graphics::{
     mono_font::{self, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::{Dimensions, Point, Size},
-    primitives::{Primitive, PrimitiveStyle, Rectangle},
+    primitives::{Primitive, PrimitiveStyle, Rectangle, Triangle},
     text::{Alignment, Baseline, Text},
     Drawable,
 };
@@ -35,14 +35,14 @@ where
 }
 
 fn draw_title_screen<DI>(
-    disp: &mut GraphicsMode<DI>,
+    display: &mut GraphicsMode<DI>,
     text: &'static str,
     selected: bool,
 ) -> Result<(), display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
-    disp.clear();
+    display.clear();
 
     let big_font = MonoTextStyleBuilder::new()
         .font(&mono_font::iso_8859_5::FONT_10X20)
@@ -55,11 +55,11 @@ where
         .build();
 
     let (display_w, _display_h) = {
-        let d = disp.get_dimensions();
+        let d = display.get_dimensions();
         (d.0 as i32, d.1 as i32)
     };
 
-    Text::with_baseline("Мини-Альфа", Point::new(18, -3), big_font, Baseline::Top).draw(disp)?;
+    Text::with_baseline("Мини-Альфа", Point::new(18, -3), big_font, Baseline::Top).draw(display)?;
     Text::with_alignment(
         "v2.0",
         Point::new(
@@ -69,11 +69,15 @@ where
         big_font,
         Alignment::Center,
     )
-    .draw(disp)?;
+    .draw(display)?;
 
+    let text_w = {
+        let mt = Text::with_baseline(text, Point::zero(), big_font, Baseline::Top);
+        mt.bounding_box().size.width / 2 /* russian */
+    } as i32;
     let begin_text = Text::with_baseline(
         text,
-        Point::new(36, 31),
+        Point::new(display_w / 2 - text_w / 2, 31),
         {
             if selected {
                 MonoTextStyleBuilder::from(&big_font)
@@ -87,16 +91,31 @@ where
         Baseline::Top,
     );
 
-    gen_text_bounding_rect(&begin_text, true)
-        .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
-        .draw(disp)?;
+    let button = gen_text_bounding_rect(&begin_text, true);
 
-    begin_text.draw(disp)?;
+    draw_arrows_to_rect(
+        display,
+        &button,
+        5,
+        -1,
+        3,
+        PrimitiveStyle::with_fill(BinaryColor::On),
+    )?;
+
+    button
+        .into_styled(if selected {
+            PrimitiveStyle::with_fill(BinaryColor::On)
+        } else {
+            PrimitiveStyle::with_stroke(BinaryColor::On, 1)
+        })
+        .draw(display)?;
+
+    begin_text.draw(display)?;
 
     Rectangle::new(
         Point::new(
             0,
-            disp.get_dimensions().1 as i32 - small_font_italic.font.character_size.height as i32
+            display.get_dimensions().1 as i32 - small_font_italic.font.character_size.height as i32
                 + 1,
         ),
         Size::new(
@@ -105,22 +124,22 @@ where
         ),
     )
     .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
-    .draw(disp)?;
+    .draw(display)?;
 
     Text::new(
         "СКТБ ЭлПА(c)",
         Point::new(
             (Ratio::<i32>::new(1, 4) * display_w).to_integer() as i32,
-            disp.get_dimensions().1 as i32 - 2,
+            display.get_dimensions().1 as i32 - 2,
         ),
         MonoTextStyleBuilder::from(&small_font_italic)
             .background_color(BinaryColor::On)
             .text_color(BinaryColor::Off)
             .build(),
     )
-    .draw(disp)?;
+    .draw(display)?;
 
-    disp.flush()?;
+    display.flush()?;
 
     Ok(())
 }
@@ -135,4 +154,50 @@ fn gen_text_bounding_rect<T: Dimensions>(text: &T, is_russian_text: bool) -> Rec
     bb.size.width += 3 * 2;
 
     bb
+}
+
+fn draw_arrows_to_rect<DI>(
+    display: &mut GraphicsMode<DI>,
+    rect: &Rectangle,
+    arrow_len: i32,
+    vertical_resize: i32,
+    h_offset: i32,
+    style: PrimitiveStyle<BinaryColor>,
+) -> Result<(), display_interface::DisplayError>
+where
+    DI: display_interface::WriteOnlyDataCommand,
+{
+    let center_line = rect.center().y;
+    let button_heigh_half = (rect.size.height / 2) as i32;
+    let left = rect.top_left.x;
+    let right = rect.bottom_right().map_or_else(|| left, |p| p.x);
+
+    Triangle::new(
+        Point::new(left - h_offset - arrow_len, center_line),
+        Point::new(
+            left - h_offset,
+            center_line - (button_heigh_half + vertical_resize),
+        ),
+        Point::new(
+            left - h_offset,
+            center_line + (button_heigh_half + vertical_resize),
+        ),
+    )
+    .into_styled(style)
+    .draw(display)?;
+    Triangle::new(
+        Point::new(right + h_offset + arrow_len, center_line),
+        Point::new(
+            right + h_offset,
+            center_line - (button_heigh_half + vertical_resize),
+        ),
+        Point::new(
+            right + h_offset,
+            center_line + (button_heigh_half + vertical_resize),
+        ),
+    )
+    .into_styled(style)
+    .draw(display)?;
+
+    Ok(())
 }
