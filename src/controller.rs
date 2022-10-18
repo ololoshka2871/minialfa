@@ -31,6 +31,11 @@ pub enum DisplayCommand {
         values: Parameters,
         selected: SelectedParameter,
     },
+    Measure {
+        f: Option<f32>,
+        p: Option<f32>,
+        threashold: f32,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -47,10 +52,21 @@ pub enum SelectedParameter {
     SaveAndExit,
 }
 
+#[derive(PartialEq)]
 enum State {
     Title,
     Setup,
+    Measuring,
 }
+
+#[derive(PartialEq, Clone, Copy, FromPrimitive)]
+enum TitleOptions {
+    Start = 0,
+    Setup = 1,
+    COUNT,
+}
+
+static TITLE_OPTIONS: [&'static str; 2] = ["Начать", "Настройки"];
 
 const MIN_PREASURE: f32 = 1.0;
 const MAX_PRESSURE: f32 = 800.0;
@@ -60,8 +76,6 @@ const MIN_INTERVAL: u32 = 50;
 const MAX_INTERVAL: u32 = 500;
 const INTERVAL_STEP: u32 = 50;
 
-static TITLE_OPTIONS: [&'static str; 2] = ["Начать", "Настройки"];
-
 pub struct Controller {
     encoder: (Sender<EncoderCommand>, Receiver<EncoderCommand>),
     sensors: (Sender<SensorResult>, Receiver<SensorResult>),
@@ -69,7 +83,7 @@ pub struct Controller {
 
     parameters: Parameters,
 
-    title_option: usize,
+    title_option: TitleOptions,
     current_state: State,
     current_setup_parameter: SelectedParameter,
 }
@@ -83,7 +97,7 @@ impl Controller {
 
             parameters: Default::default(), // TODO: load
 
-            title_option: 0,
+            title_option: TitleOptions::Start,
             current_state: State::Title,
             current_setup_parameter: SelectedParameter::Threshold,
         }
@@ -101,61 +115,133 @@ impl Controller {
         self.display
             .0
             .send(DisplayCommand::TitleScreen {
-                option: TITLE_OPTIONS[self.title_option],
+                option: TITLE_OPTIONS[self.title_option as usize],
                 selected: false,
             })
             .unwrap();
         self.display.1.clone()
     }
 
-    pub fn poll(&mut self) {
+    pub fn poll<TIMER>(&mut self, sensors_timer: &mut TIMER)
+    where
+        TIMER: embedded_svc::timer::PeriodicTimer + embedded_svc::timer::Timer,
+    {
         if let Ok(res) = self.encoder.1.try_recv() {
             println!("Encoder result: {:?}", res);
-
             match self.current_state {
-                State::Title => self.process_title_cmd(res),
+                State::Title => {
+                    if self.process_title_cmd(res) {
+                        sensors_timer
+                            .every(Duration::from_millis(
+                                self.parameters.update_period_ms as u64,
+                            ))
+                            .expect("Failed to starts sensors")
+                    }
+                }
                 State::Setup => self.process_setup(res),
+                State::Measuring => match res {
+                    EncoderCommand::Pull => {
+                        // отмена измерения, возврат на главный экран
+                        self.current_state = State::Title;
+                        self.title_option = TitleOptions::Start;
+
+                        sensors_timer.cancel().unwrap();
+
+                        self.display
+                            .0
+                            .send(DisplayCommand::TitleScreen {
+                                option: TITLE_OPTIONS[self.title_option as usize],
+                                selected: false,
+                            })
+                            .unwrap()
+                    }
+                    _ => {}
+                },
             }
         } else if let Ok(res) = self.sensors.1.try_recv() {
-            //println!("Sensor result: {:?}", res);
+            println!("Sensor result: {:?}", res);
+            if self.current_state == State::Measuring {
+                self.display
+                    .0
+                    .send(DisplayCommand::Measure {
+                        f: Some(res.f),
+                        p: Some(res.p),
+                        threashold: self.parameters.threshold,
+                    })
+                    .unwrap();
+            }
         } else {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
 
-    fn process_title_cmd(&mut self, cmd: EncoderCommand) {
+    fn process_title_cmd(&mut self, cmd: EncoderCommand) -> bool {
         match cmd {
             EncoderCommand::Increment | EncoderCommand::Decrement => {
-                self.title_option =
-                    self.title_option
-                        .wrapping_add_signed(if cmd == EncoderCommand::Increment {
-                            1isize
+                self.title_option = num::FromPrimitive::from_u32(
+                    (self.title_option as u32).wrapping_add_signed(
+                        if cmd == EncoderCommand::Increment {
+                            1i32
                         } else {
                             -1
-                        })
-                        % TITLE_OPTIONS.len();
+                        },
+                    ) % (TitleOptions::COUNT as u32),
+                )
+                .unwrap();
 
-                self.display.0.send(DisplayCommand::TitleScreen {
-                    option: TITLE_OPTIONS[self.title_option],
-                    selected: false,
-                })
+                self.display
+                    .0
+                    .send(DisplayCommand::TitleScreen {
+                        option: TITLE_OPTIONS[self.title_option as usize],
+                        selected: false,
+                    })
+                    .unwrap();
+                false
             }
-            EncoderCommand::Push => self.display.0.send(DisplayCommand::TitleScreen {
-                option: TITLE_OPTIONS[self.title_option],
-                selected: true,
-            }),
+            EncoderCommand::Push => {
+                self.display
+                    .0
+                    .send(DisplayCommand::TitleScreen {
+                        option: TITLE_OPTIONS[self.title_option as usize],
+                        selected: true,
+                    })
+                    .unwrap();
+                false
+            }
             EncoderCommand::Pull => {
-                // enter setup
-                self.current_state = State::Setup;
-                self.current_setup_parameter = SelectedParameter::Threshold;
+                match self.title_option {
+                    TitleOptions::Start => {
+                        // enter working cycle
+                        self.current_state = State::Measuring;
+                        self.display
+                            .0
+                            .send(DisplayCommand::Measure {
+                                f: None,
+                                p: None,
+                                threashold: self.parameters.threshold,
+                            })
+                            .unwrap();
 
-                self.display.0.send(DisplayCommand::SetupMenu {
-                    values: self.parameters,
-                    selected: self.current_setup_parameter,
-                })
+                        true
+                    }
+                    TitleOptions::Setup => {
+                        // enter setup
+                        self.current_state = State::Setup;
+                        self.current_setup_parameter = SelectedParameter::Threshold;
+
+                        self.display
+                            .0
+                            .send(DisplayCommand::SetupMenu {
+                                values: self.parameters,
+                                selected: self.current_setup_parameter,
+                            })
+                            .unwrap();
+                        false
+                    }
+                    TitleOptions::COUNT => unreachable!(),
+                }
             }
         }
-        .unwrap()
     }
 
     fn process_setup(&mut self, cmd: EncoderCommand) {
@@ -164,10 +250,10 @@ impl Controller {
                 SelectedParameter::SaveAndExit => {
                     self.current_state = State::Title;
                     self.current_setup_parameter = SelectedParameter::Threshold;
-                    self.title_option = 0;
+                    self.title_option = TitleOptions::Setup;
 
                     self.display.0.send(DisplayCommand::TitleScreen {
-                        option: TITLE_OPTIONS[self.title_option],
+                        option: TITLE_OPTIONS[self.title_option as usize],
                         selected: false,
                     })
                 }
@@ -185,31 +271,32 @@ impl Controller {
             .unwrap()
         } else if cmd != EncoderCommand::Push {
             match self.current_setup_parameter {
-                SelectedParameter::Threshold => {
-                    match cmd {
-                        EncoderCommand::Increment => {
-                            if self.parameters.threshold < MAX_PRESSURE {
-                                self.parameters.threshold += PREASURE_STEP;
-                            }
+                SelectedParameter::Threshold => match cmd {
+                    EncoderCommand::Increment => {
+                        if self.parameters.threshold < MAX_PRESSURE {
+                            self.parameters.threshold += PREASURE_STEP;
                         }
-                        EncoderCommand::Decrement => 
+                    }
+                    EncoderCommand::Decrement => {
                         if self.parameters.threshold > MIN_PREASURE {
                             self.parameters.threshold -= PREASURE_STEP;
                         }
-                        _ => {}
                     }
-                }
-                SelectedParameter::UpdatePeriodMs => {
-                    match cmd {
-                        EncoderCommand::Increment => if self.parameters.update_period_ms < MAX_INTERVAL{
+                    _ => {}
+                },
+                SelectedParameter::UpdatePeriodMs => match cmd {
+                    EncoderCommand::Increment => {
+                        if self.parameters.update_period_ms < MAX_INTERVAL {
                             self.parameters.update_period_ms += INTERVAL_STEP;
-                        },
-                        EncoderCommand::Decrement => if self.parameters.update_period_ms > MIN_INTERVAL{
-                            self.parameters.update_period_ms -= INTERVAL_STEP;
-                        },
-                        _ => {},
+                        }
                     }
-                }
+                    EncoderCommand::Decrement => {
+                        if self.parameters.update_period_ms > MIN_INTERVAL {
+                            self.parameters.update_period_ms -= INTERVAL_STEP;
+                        }
+                    }
+                    _ => {}
+                },
                 SelectedParameter::SaveAndExit => { /* nothing */ }
             }
 

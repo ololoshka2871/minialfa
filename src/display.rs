@@ -1,8 +1,10 @@
+use std::collections::VecDeque;
+
 use embedded_graphics::{
     mono_font::{self, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::{Dimensions, Point, Size},
-    primitives::{Primitive, PrimitiveStyle, Rectangle, Triangle},
+    primitives::{Line, Primitive, PrimitiveStyle, Rectangle, Triangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
     Drawable,
 };
@@ -11,17 +13,18 @@ use num::rational::Ratio;
 
 use ssd1309::prelude::GraphicsMode;
 
-use crate::controller::DisplayCommand;
-
-use super::controller::SelectedParameter;
+use crate::controller::{DisplayCommand, SelectedParameter};
 
 pub fn dispaly_thread<DI>(
     mut disp: GraphicsMode<DI>,
-    disp_channel: crossbeam::channel::Receiver<crate::controller::DisplayCommand>,
+    disp_channel: crossbeam::channel::Receiver<DisplayCommand>,
 ) -> !
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
+    let sz = disp.get_dimensions().0.into();
+    let mut history = VecDeque::with_capacity(sz);
+
     loop {
         match disp_channel.recv() {
             Ok(DisplayCommand::TitleScreen { option, selected }) => {
@@ -29,6 +32,9 @@ where
             }
             Ok(DisplayCommand::SetupMenu { values, selected }) => {
                 draw_menu(&mut disp, values, selected)
+            }
+            Ok(DisplayCommand::Measure { f, p, threashold }) => {
+                draw_measure(&mut disp, f, p, threashold, &mut history)
             }
             Err(e) => {
                 println!("Display cmd recive error: {}", e);
@@ -144,9 +150,7 @@ where
     )
     .draw(display)?;
 
-    display.flush()?;
-
-    Ok(())
+    display.flush()
 }
 
 /// ```norun
@@ -304,9 +308,103 @@ where
     )
     .draw(display)?;
 
-    display.flush()?;
+    display.flush()
+}
 
-    Ok(())
+/// ```norun
+/// P: 123.456      F: 123.456
+/// <график Y=[P[0]...Threshhold]>
+/// __________________________
+/// ```
+fn draw_measure<DI>(
+    display: &mut GraphicsMode<DI>,
+    f: Option<f32>,
+    p: Option<f32>,
+    threashold: f32,
+    history: &mut VecDeque<f32>,
+) -> Result<(), display_interface::DisplayError>
+where
+    DI: display_interface::WriteOnlyDataCommand,
+{
+    display.clear();
+
+    let small_font = MonoTextStyleBuilder::new()
+        .font(&mono_font::iso_8859_5::FONT_6X13)
+        .text_color(BinaryColor::On)
+        .build();
+
+    let (display_w, display_h) = {
+        let d = display.get_dimensions();
+        (d.0 as i32, d.1 as i32)
+    };
+
+    if f.is_none() && p.is_none() {
+        // reset
+        history.clear();
+    } else {
+        if history.len() == display_w as usize {
+            history.pop_front();
+        }
+
+        history.push_back(p.unwrap_or_default());
+    }
+
+    let range = (history
+        .iter()
+        .max_by_key(|v| ordered_float::OrderedFloat(**v))
+        .unwrap_or(&800.0)
+        - threashold)
+        .round() as u32;
+
+    let max_y = display_h as u32 - 20;
+
+    for line_n in 0..display_w {
+        if let Some(element) = history.get(line_n as usize) {
+            let stroke_len = transform_size(element.round() as u32, max_y, range) as i32;
+            Line::new(
+                Point::new(
+                    line_n,
+                    display_h - stroke_len,
+                ),
+                Point::new(line_n, display_h),
+            )
+            .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .draw(display)?;
+        } else {
+            Line::new(
+                Point::new(0, display_h - 1),
+                Point::new(display_w, display_h - 1),
+            )
+            .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .draw(display)?;
+
+            break;
+        }
+    }
+
+    Text::with_text_style(
+        format!("P: {:0.2}", p.unwrap_or(f32::NAN)).as_str(),
+        Point::new(2, 2),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Left)
+            .baseline(Baseline::Top)
+            .build(),
+    )
+    .draw(display)?;
+
+    Text::with_text_style(
+        format!("F: {:0.2}", f.unwrap_or(f32::NAN)).as_str(),
+        Point::new(display_w - 2, 2),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    )
+    .draw(display)?;
+
+    display.flush()
 }
 
 fn gen_text_bounding_rect<T: Dimensions>(text: &T, is_russian_text: bool) -> Rectangle {
@@ -365,4 +463,8 @@ where
     .draw(display)?;
 
     Ok(())
+}
+
+fn transform_size(current: u32, target_max: u32, max_value: u32) -> u32 {
+    (target_max * current) / max_value
 }

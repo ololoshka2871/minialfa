@@ -49,7 +49,7 @@ fn main() {
     .expect("Failed to create encoder");
 
     println!("Initialising sensors...");
-    let _sensors = crate_sensors(
+    let mut sensors_timer = crate_sensors(
         dp.i2c0,
         i2c::MasterPins {
             sda: dp.pins.gpio26,
@@ -78,7 +78,7 @@ fn main() {
     println!("Ready!");
 
     loop {
-        controller.poll();
+        controller.poll(&mut sensors_timer);
     }
 }
 
@@ -180,7 +180,7 @@ where
     let p_sensor = i2c_sensor::I2CSensor::new(11);
     let f_sensor = i2c_sensor::I2CSensor::new(12);
 
-    let mut timer = timer_svc.timer(move || {
+    let timer = timer_svc.timer(move || {
         let p = match p_sensor.read(&mut i2c) {
             Ok(v) => v.pressure,
             Err(e) => {
@@ -205,8 +205,6 @@ where
             println!("Failed to send sensor result: {}", e);
         }
     })?;
-
-    timer.every(Duration::from_millis(100)).unwrap();
 
     Ok(timer)
 }
@@ -251,7 +249,7 @@ where
     disp.init().unwrap();
 
     std::thread::Builder::new()
-        .stack_size(10 * 1024)
+        .stack_size(12 * 1024)
         .name("Display".to_string())
         .spawn(move || display::dispaly_thread(disp, disp_channel))?;
 
