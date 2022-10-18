@@ -38,6 +38,11 @@ pub enum DisplayCommand {
         p: Option<f32>,
         threashold: f32,
     },
+    Result {
+        f: f32,
+        p: f32,
+        threashold: f32,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -59,6 +64,7 @@ enum State {
     Title,
     Setup,
     Measuring,
+    Result,
 }
 
 #[derive(PartialEq, Clone, Copy, FromPrimitive)]
@@ -88,6 +94,8 @@ pub struct Controller {
     title_option: TitleOptions,
     current_state: State,
     current_setup_parameter: SelectedParameter,
+
+    prev_p: f32,
 }
 
 impl Controller {
@@ -102,6 +110,8 @@ impl Controller {
             title_option: TitleOptions::Start,
             current_state: State::Title,
             current_setup_parameter: SelectedParameter::Threshold,
+
+            prev_p: 0.0,
         }
     }
 
@@ -140,7 +150,7 @@ impl Controller {
         .unwrap();
 
         if let Ok(res) = self.encoder.1.try_recv() {
-            println!("Encoder result: {:?}", res);
+            //println!("Encoder result: {:?}", res);
             match self.current_state {
                 State::Title => {
                     if self.process_title_cmd(res) {
@@ -152,13 +162,13 @@ impl Controller {
                     }
                 }
                 State::Setup => self.process_setup(res),
-                State::Measuring => match res {
+                State::Measuring | State::Result => match res {
                     EncoderCommand::Pull => {
                         // отмена измерения, возврат на главный экран
                         self.current_state = State::Title;
                         self.title_option = TitleOptions::Start;
 
-                        sensors_timer.cancel().unwrap();
+                        let _ = sensors_timer.cancel(); // result unused
 
                         self.display
                             .0
@@ -174,14 +184,32 @@ impl Controller {
         } else if let Ok(res) = self.sensors.1.try_recv() {
             //println!("Sensor result: {:?}", res);
             if self.current_state == State::Measuring {
-                self.display
-                    .0
-                    .send(DisplayCommand::Measure {
-                        f: Some(res.f),
-                        p: Some(res.p),
-                        threashold: self.parameters.threshold,
-                    })
-                    .unwrap();
+                if self.prev_p > res.p && res.p <= self.parameters.threshold {
+                    // end -> result screen
+                    self.current_state = State::Result;
+
+                    sensors_timer.cancel().unwrap();
+
+                    self.display
+                        .0
+                        .send(DisplayCommand::Result {
+                            p: res.p,
+                            f: res.f,
+                            threashold: self.parameters.threshold,
+                        })
+                        .unwrap()
+                } else {
+                    // update screen
+                    self.display
+                        .0
+                        .send(DisplayCommand::Measure {
+                            f: Some(res.f),
+                            p: Some(res.p),
+                            threashold: self.parameters.threshold,
+                        })
+                        .unwrap();
+                }
+                self.prev_p = res.p;
             }
         } else {
             std::thread::sleep(Duration::from_millis(10));
@@ -225,6 +253,7 @@ impl Controller {
                 match self.title_option {
                     TitleOptions::Start => {
                         // enter working cycle
+                        self.prev_p = 0.0;
                         self.current_state = State::Measuring;
                         self.display
                             .0

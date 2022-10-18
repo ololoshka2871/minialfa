@@ -39,6 +39,9 @@ where
             Ok(DisplayCommand::Measure { f, p, threashold }) => {
                 draw_measure(&mut disp, f, p, threashold, &mut history)
             }
+            Ok(DisplayCommand::Result { f, p, threashold }) => {
+                draw_result(&mut disp, f, p, threashold)
+            }
             Err(e) => {
                 println!("Display cmd recive error: {}", e);
                 Ok(())
@@ -401,6 +404,38 @@ where
             .alignment(Alignment::Right)
             .baseline(Baseline::Top)
             .build(),
+    )
+    .draw(display)?;
+
+    display.flush()
+}
+
+fn draw_result<DI>(
+    display: &mut GraphicsMode<DI>,
+    f: f32,
+    p: f32,
+    threashold: f32,
+) -> Result<(), display_interface::DisplayError>
+where
+    DI: display_interface::WriteOnlyDataCommand,
+{
+    display.clear();
+
+    let small_font = MonoTextStyleBuilder::new()
+        .font(&mono_font::iso_8859_5::FONT_6X13)
+        .text_color(BinaryColor::On)
+        .build();
+
+    Text::with_baseline(
+        format!(
+            "Result at P={p:0.2} mmHg\n(<{threashold:0.2}) mmHg\nF={f:0.3} Hz",
+            p = p,
+            threashold = threashold,
+            f = f,
+        ).as_str(),
+        Point::zero(),
+        small_font,
+        Baseline::Top,
     )
     .draw(display)?;
 

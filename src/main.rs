@@ -40,7 +40,7 @@ fn main() {
 
     let mut controller = controller::Controller::new();
 
-    let mut klapan = klapan::Klapan::new(dp.pins.gpio2.into_output().unwrap());
+    let mut klapan = klapan::Klapan::new(dp.pins.gpio27.into_output().unwrap());
 
     println!("Initialising rotary encoder");
     let _encoder = create_encoder(
@@ -181,7 +181,7 @@ where
         i2c_set_timeout(0, 50000);
     }
 
-    let p_sensor = i2c_sensor::I2CSensor::new(11);
+    let p_sensor = i2c_sensor::I2CSensor::new(15);
     let f_sensor = i2c_sensor::I2CSensor::new(12);
 
     let timer = timer_svc.timer(move || {
