@@ -15,6 +15,9 @@ use ssd1309::prelude::GraphicsMode;
 
 use crate::controller::{DisplayCommand, SelectedParameter};
 
+#[allow(unused)]
+use crate::support::print_time_of;
+
 pub fn dispaly_thread<DI>(
     mut disp: GraphicsMode<DI>,
     disp_channel: crossbeam::channel::Receiver<DisplayCommand>,
@@ -362,10 +365,7 @@ where
         if let Some(element) = history.get(line_n as usize) {
             let stroke_len = transform_size(element.round() as u32, max_y, range) as i32;
             Line::new(
-                Point::new(
-                    line_n,
-                    display_h - stroke_len,
-                ),
+                Point::new(line_n, display_h - stroke_len),
                 Point::new(line_n, display_h),
             )
             .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))

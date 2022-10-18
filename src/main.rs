@@ -4,6 +4,7 @@
 mod controller;
 mod display;
 mod i2c_sensor;
+mod support;
 
 use crossbeam::channel::Sender;
 use embedded_hal::digital::v2::InputPin;
@@ -251,7 +252,9 @@ where
     std::thread::Builder::new()
         .stack_size(12 * 1024)
         .name("Display".to_string())
-        .spawn(move || display::dispaly_thread(disp, disp_channel))?;
+        .spawn(move || {
+            display::dispaly_thread(disp, disp_channel)
+        })?;
 
     Ok(())
 }

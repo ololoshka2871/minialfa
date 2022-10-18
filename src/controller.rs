@@ -159,7 +159,7 @@ impl Controller {
                 },
             }
         } else if let Ok(res) = self.sensors.1.try_recv() {
-            println!("Sensor result: {:?}", res);
+            //println!("Sensor result: {:?}", res);
             if self.current_state == State::Measuring {
                 self.display
                     .0
