@@ -8,6 +8,8 @@ use std::time::Duration;
 use crossbeam::channel::{self, Receiver, Sender};
 use num_derive::FromPrimitive;
 
+use crate::klapan::KlapanState;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EncoderCommand {
     Increment,
@@ -122,10 +124,21 @@ impl Controller {
         self.display.1.clone()
     }
 
-    pub fn poll<TIMER>(&mut self, sensors_timer: &mut TIMER)
-    where
+    pub fn poll<TIMER, E, PIN>(
+        &mut self,
+        sensors_timer: &mut TIMER,
+        klapan: &mut crate::klapan::Klapan<PIN>,
+    ) where
         TIMER: embedded_svc::timer::PeriodicTimer + embedded_svc::timer::Timer,
+        PIN: embedded_hal::digital::v2::OutputPin<Error = E>,
+        E: std::fmt::Debug,
     {
+        match self.current_state {
+            State::Measuring => klapan.set_state(KlapanState::Vacuum),
+            _ => klapan.set_state(KlapanState::Atmosphere),
+        }
+        .unwrap();
+
         if let Ok(res) = self.encoder.1.try_recv() {
             println!("Encoder result: {:?}", res);
             match self.current_state {

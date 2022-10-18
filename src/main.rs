@@ -5,6 +5,7 @@ mod controller;
 mod display;
 mod i2c_sensor;
 mod support;
+mod klapan;
 
 use crossbeam::channel::Sender;
 use embedded_hal::digital::v2::InputPin;
@@ -39,6 +40,8 @@ fn main() {
 
     let mut controller = controller::Controller::new();
 
+    let mut klapan = klapan::Klapan::new(dp.pins.gpio2.into_output().unwrap());
+
     println!("Initialising rotary encoder");
     let _encoder = create_encoder(
         dp.pins.gpio16.into_input().unwrap(),
@@ -50,7 +53,7 @@ fn main() {
     .expect("Failed to create encoder");
 
     println!("Initialising sensors...");
-    let mut sensors_timer = crate_sensors(
+    let mut sensors_timer = create_sensors(
         dp.i2c0,
         i2c::MasterPins {
             sda: dp.pins.gpio26,
@@ -79,7 +82,7 @@ fn main() {
     println!("Ready!");
 
     loop {
-        controller.poll(&mut sensors_timer);
+        controller.poll(&mut sensors_timer, &mut klapan);
     }
 }
 
@@ -140,7 +143,7 @@ where
     Ok(timer)
 }
 
-fn crate_sensors<I2C, SDA, SCL>(
+fn create_sensors<I2C, SDA, SCL>(
     i2c0: I2C,
     pins: i2c::MasterPins<SDA, SCL>,
     sensor_channel: Sender<controller::SensorResult>,
