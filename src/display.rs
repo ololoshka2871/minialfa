@@ -4,12 +4,12 @@ use embedded_graphics::{
     mono_font::{self, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::{Dimensions, Point, Size},
-    primitives::{Line, Primitive, PrimitiveStyle, Rectangle, Triangle},
+    primitives::{Circle, Line, Primitive, PrimitiveStyle, Rectangle, Triangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
-    Drawable,
+    Drawable, Pixel,
 };
 
-use num::rational::Ratio;
+use num::{rational::Ratio, Num};
 
 use ssd1309::prelude::GraphicsMode;
 
@@ -28,6 +28,8 @@ where
     let sz = disp.get_dimensions().0.into();
     let mut history = VecDeque::with_capacity(sz);
 
+    let mut f_fistory = Vec::new();
+
     loop {
         match disp_channel.recv() {
             Ok(DisplayCommand::TitleScreen { option, selected }) => {
@@ -37,10 +39,22 @@ where
                 draw_menu(&mut disp, values, selected)
             }
             Ok(DisplayCommand::Measure { f, p, threashold }) => {
-                draw_measure(&mut disp, f, p, threashold, &mut history)
+                match draw_measure(&mut disp, f, p, threashold, &mut history, f_fistory) {
+                    Ok(h) => {
+                        f_fistory = h;
+                        Ok(())
+                    }
+                    Err(e) => panic!("{:?}", e),
+                }
             }
             Ok(DisplayCommand::Result { f, p, threashold }) => {
-                draw_result(&mut disp, f, p, threashold)
+                match draw_result(&mut disp, f, p, threashold, f_fistory) {
+                    Ok(h) => {
+                        f_fistory = h;
+                        Ok(())
+                    }
+                    Err(e) => panic!("{:?}", e),
+                }
             }
             Err(e) => {
                 println!("Display cmd recive error: {}", e);
@@ -328,7 +342,8 @@ fn draw_measure<DI>(
     p: Option<f32>,
     threashold: f32,
     history: &mut VecDeque<f32>,
-) -> Result<(), display_interface::DisplayError>
+    mut f_history: Vec<f32>,
+) -> Result<Vec<f32>, display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
@@ -347,38 +362,44 @@ where
     if f.is_none() && p.is_none() {
         // reset
         history.clear();
+        f_history.clear();
     } else {
         if history.len() == display_w as usize {
             history.pop_front();
         }
 
         history.push_back(p.unwrap_or_default());
+        f_history.push(f.unwrap_or_default());
+
+        if f_history.len() > 1000 {
+            f_history = f_history[500..].to_vec();
+        }
     }
 
-    let range = (history
+    let range = history
         .iter()
         .max_by_key(|v| ordered_float::OrderedFloat(**v))
         .unwrap_or(&800.0)
-        - threashold)
-        .round() as u32;
+        - threashold;
 
     let max_y = display_h as u32 - 20;
 
+    let line_style = PrimitiveStyle::with_stroke(BinaryColor::On, 1);
     for line_n in 0..display_w {
         if let Some(element) = history.get(line_n as usize) {
-            let stroke_len = transform_size(element.round() as u32, max_y, range) as i32;
+            let stroke_len = transform_size(*element, max_y as f32, range) as i32;
             Line::new(
                 Point::new(line_n, display_h - stroke_len),
                 Point::new(line_n, display_h),
             )
-            .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .into_styled(line_style)
             .draw(display)?;
         } else {
             Line::new(
                 Point::new(0, display_h - 1),
                 Point::new(display_w, display_h - 1),
             )
-            .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .into_styled(line_style)
             .draw(display)?;
 
             break;
@@ -407,15 +428,18 @@ where
     )
     .draw(display)?;
 
-    display.flush()
+    display.flush()?;
+
+    Ok(f_history)
 }
 
 fn draw_result<DI>(
     display: &mut GraphicsMode<DI>,
     f: f32,
     p: f32,
-    threashold: f32,
-) -> Result<(), display_interface::DisplayError>
+    _threashold: f32,
+    f_history: Vec<f32>,
+) -> Result<Vec<f32>, display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
@@ -426,20 +450,109 @@ where
         .text_color(BinaryColor::On)
         .build();
 
-    Text::with_baseline(
-        format!(
-            "Result at P={p:0.2} mmHg\n(<{threashold:0.2}) mmHg\nF={f:0.3} Hz",
-            p = p,
-            threashold = threashold,
-            f = f,
-        ).as_str(),
-        Point::zero(),
+    let (display_w, display_h) = {
+        let d = display.get_dimensions();
+        (d.0 as i32, d.1 as i32)
+    };
+
+    let pos = Text::with_baseline("Давление:", Point::new(1, 2), small_font, Baseline::Top)
+        .draw(display)?;
+
+    Text::with_text_style(
+        format!("{:0.02} mmHg", p).as_str(),
+        Point::new(display_w - 1, pos.y),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    )
+    .draw(display)?;
+
+    let pos = Text::with_baseline(
+        "Частота:",
+        Point::new(1, (small_font.font.character_size.height + 1) as i32),
         small_font,
         Baseline::Top,
     )
     .draw(display)?;
 
-    display.flush()
+    Text::with_text_style(
+        format!("{:0.02} Hz", f).as_str(),
+        Point::new(display_w - 1, pos.y),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    )
+    .draw(display)?;
+
+    // graph
+    let max_y = display_h as u32 - 20;
+
+    let (mut range_min, mut range_max) = f_history
+        .iter()
+        .fold((f32::INFINITY, -f32::INFINITY), |acc, &f| {
+            (acc.0.min(f), acc.1.max(f))
+        });
+
+    const MIN_DIFF: f32 = 1.0;
+    #[allow(deprecated)]
+    if range_min.abs_sub(range_max) < MIN_DIFF {
+        range_min -= MIN_DIFF / 2.0;
+        range_max += MIN_DIFF / 2.0;
+    }
+
+    println!("Results plot range: {:?}", (range_min, range_max));
+
+    //let line_style = PrimitiveStyle::with_stroke(BinaryColor::On, 1);
+    let mut last_point = Point::new(display_w - 1, display_h - 1);
+    for line_n in 0..display_w as u32 {
+        let h_e = transform_size(line_n, f_history.len() as u32 - 1, display_w as u32 - 1) as usize;
+        let stroke_len = transform_size(
+            f_history[h_e] - range_min,
+            max_y as f32,
+            range_max - range_min,
+        ) as i32;
+
+        last_point = Point::new(line_n as i32, display_h - 1 - stroke_len);
+
+        Pixel(last_point, BinaryColor::On).draw(display)?;
+        /*
+        Line::new(
+            Point::new(line_n as i32, display_h - 1),
+            Point::new(line_n as i32, display_h - 1 - stroke_len),
+        )
+        .into_styled(line_style)
+        .draw(display)?;
+        */
+    }
+
+    /*
+    let canvas_center = display_h - max_y as i32 / 2;
+    Circle::with_center(Point::new(last_point.x - 1, last_point.y), 5)
+        .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+        .draw(display)?;
+    Text::with_text_style(
+        format!(" {} ", f_history.last().unwrap_or(&0.0)).as_str(),
+        last_point,
+        small_font,
+        TextStyleBuilder::new()
+            .baseline(if last_point.y > canvas_center {
+                Baseline::Bottom
+            } else {
+                Baseline::Top
+            })
+            .alignment(Alignment::Right)
+            .build(),
+    )
+    .draw(display)?;
+    */
+
+    display.flush()?;
+
+    Ok(Vec::new()) // clear history
 }
 
 fn gen_text_bounding_rect<T: Dimensions>(text: &T, is_russian_text: bool) -> Rectangle {
@@ -500,6 +613,6 @@ where
     Ok(())
 }
 
-fn transform_size(current: u32, target_max: u32, max_value: u32) -> u32 {
+fn transform_size<T: Num>(current: T, target_max: T, max_value: T) -> T {
     (target_max * current) / max_value
 }
