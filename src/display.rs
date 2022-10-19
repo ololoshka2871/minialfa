@@ -4,7 +4,7 @@ use embedded_graphics::{
     mono_font::{self, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::{Dimensions, Point, Size},
-    primitives::{Circle, Line, Primitive, PrimitiveStyle, Rectangle, Triangle},
+    primitives::{Line, Primitive, PrimitiveStyle, Rectangle, Triangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
     Drawable, Pixel,
 };
@@ -342,8 +342,8 @@ fn draw_measure<DI>(
     p: Option<f32>,
     threashold: f32,
     history: &mut VecDeque<f32>,
-    mut f_history: Vec<f32>,
-) -> Result<Vec<f32>, display_interface::DisplayError>
+    mut f_history: Vec<(f32, f32)>,
+) -> Result<Vec<(f32, f32)>, display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
@@ -368,8 +368,9 @@ where
             history.pop_front();
         }
 
-        history.push_back(p.unwrap_or_default());
-        f_history.push(f.unwrap_or_default());
+        let p = p.unwrap_or_default();
+        history.push_back(p);
+        f_history.push((p, f.unwrap_or_default()));
 
         if f_history.len() > 1000 {
             f_history = f_history[500..].to_vec();
@@ -438,8 +439,8 @@ fn draw_result<DI>(
     f: f32,
     p: f32,
     _threashold: f32,
-    f_history: Vec<f32>,
-) -> Result<Vec<f32>, display_interface::DisplayError>
+    f_history: Vec<(f32, f32)>,
+) -> Result<Vec<(f32, f32)>, display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
@@ -457,6 +458,18 @@ where
 
     let pos = Text::with_baseline("Давление:", Point::new(1, 2), small_font, Baseline::Top)
         .draw(display)?;
+
+    let select_mapped_point = |line_n: u32| {
+        transform_size(line_n, f_history.len() as u32 - 1, display_w as u32 - 1) as usize
+    };
+
+    let mapped_height = |h_e: usize, range_min: f32, range_max: f32, max_y: u32| {
+        transform_size(
+            f_history[h_e].1 - range_min,
+            max_y as f32,
+            range_max - range_min,
+        ) as i32
+    };
 
     Text::with_text_style(
         format!("{:0.02} mmHg", p).as_str(),
@@ -493,8 +506,8 @@ where
 
     let (mut range_min, mut range_max) = f_history
         .iter()
-        .fold((f32::INFINITY, -f32::INFINITY), |acc, &f| {
-            (acc.0.min(f), acc.1.max(f))
+        .fold((f32::INFINITY, -f32::INFINITY), |acc, &p| {
+            (acc.0.min(p.1), acc.1.max(p.1))
         });
 
     const MIN_DIFF: f32 = 1.0;
@@ -506,49 +519,53 @@ where
 
     println!("Results plot range: {:?}", (range_min, range_max));
 
-    //let line_style = PrimitiveStyle::with_stroke(BinaryColor::On, 1);
-    let mut last_point = Point::new(display_w - 1, display_h - 1);
+    let thrend = crate::linear_regression::linear_regression(&f_history);
+
     for line_n in 0..display_w as u32 {
-        let h_e = transform_size(line_n, f_history.len() as u32 - 1, display_w as u32 - 1) as usize;
-        let stroke_len = transform_size(
-            f_history[h_e] - range_min,
-            max_y as f32,
-            range_max - range_min,
-        ) as i32;
-
-        last_point = Point::new(line_n as i32, display_h - 1 - stroke_len);
-
-        Pixel(last_point, BinaryColor::On).draw(display)?;
-        /*
-        Line::new(
-            Point::new(line_n as i32, display_h - 1),
+        let h_e = select_mapped_point(line_n);
+        let stroke_len = mapped_height(h_e, range_min, range_max, max_y);
+        Pixel(
             Point::new(line_n as i32, display_h - 1 - stroke_len),
+            BinaryColor::On,
         )
-        .into_styled(line_style)
         .draw(display)?;
-        */
     }
 
-    /*
-    let canvas_center = display_h - max_y as i32 / 2;
-    Circle::with_center(Point::new(last_point.x - 1, last_point.y), 5)
-        .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
-        .draw(display)?;
-    Text::with_text_style(
-        format!(" {} ", f_history.last().unwrap_or(&0.0)).as_str(),
-        last_point,
-        small_font,
-        TextStyleBuilder::new()
-            .baseline(if last_point.y > canvas_center {
-                Baseline::Bottom
-            } else {
-                Baseline::Top
-            })
-            .alignment(Alignment::Right)
-            .build(),
+    // thrend
+    Line::new(
+        Point::new(
+            0,
+            display_h
+                - 1
+                - transform_size(
+                    thrend.calc(select_mapped_point(0) as f32) - range_min,
+                    max_y as f32,
+                    range_max - range_min,
+                ) as i32,
+        ),
+        Point::new(
+            display_w - 1,
+            display_h
+                - 1
+                - transform_size(
+                    thrend.calc(select_mapped_point(display_w as u32 - 1) as f32) - range_min,
+                    max_y as f32,
+                    range_max - range_min,
+                ) as i32,
+        ),
+    )
+    .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+    .draw(display)?;
+
+    Text::with_baseline(
+        format!(" Чувст.: {:.01} Hz/mmHg ", thrend.k).as_str(),
+        Point::new(2, display_h),
+        MonoTextStyleBuilder::from(&small_font)
+            .background_color(BinaryColor::On)
+            .text_color(BinaryColor::Off).build(),
+        Baseline::Bottom,
     )
     .draw(display)?;
-    */
 
     display.flush()?;
 

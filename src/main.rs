@@ -6,6 +6,7 @@ mod display;
 mod i2c_sensor;
 mod support;
 mod klapan;
+mod linear_regression;
 
 use crossbeam::channel::Sender;
 use embedded_hal::digital::v2::InputPin;
