@@ -4,9 +4,10 @@
 mod controller;
 mod display;
 mod i2c_sensor;
-mod support;
 mod klapan;
 mod linear_regression;
+mod support;
+mod thyracont_sensor;
 
 use crossbeam::channel::Sender;
 use embedded_hal::digital::v2::InputPin;
@@ -25,11 +26,20 @@ use esp_idf_hal::gpio::Pull;
 use esp_idf_hal::i2c;
 use esp_idf_hal::i2c::I2cError;
 use esp_idf_hal::prelude::*;
+use esp_idf_hal::serial;
 use esp_idf_hal::spi;
 
 use embedded_svc::timer::TimerService;
 
+use thiserror::Error;
+
 use esp_idf_sys as _;
+
+#[derive(Error, Debug)]
+pub enum FormatError {
+    #[error("Empty responce")]
+    EmptyResponce,
+}
 
 fn main() {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
@@ -45,15 +55,15 @@ fn main() {
 
     println!("Initialising rotary encoder");
     let _encoder = create_encoder(
-        dp.pins.gpio16.into_input().unwrap(),
-        dp.pins.gpio4.into_input().unwrap(),
+        dp.pins.gpio32.into_input().unwrap(),
+        dp.pins.gpio33.into_input().unwrap(),
         dp.pins.gpio19.into_input().unwrap(),
         controller.command_chanel(),
         &mut timer_service,
     )
     .expect("Failed to create encoder");
 
-    println!("Initialising sensors...");
+    println!("Initialising SCTB sensors...");
     let mut sensors_timer = create_sensors(
         dp.i2c0,
         i2c::MasterPins {
@@ -63,7 +73,43 @@ fn main() {
         controller.sensor_chanel(),
         &mut timer_service,
     )
-    .expect("Failed to create sensors");
+    .expect("Failed to create SCTB sensors");
+
+    println!("Initialising Thyracont Sensor...");
+    let res = {
+        let config = serial::config::Config::new().baudrate(Hertz(9600));
+        let uart = serial::Serial::<serial::UART2, _, _>::new(
+            dp.uart2,
+            serial::Pins {
+                tx: dp.pins.gpio17,
+                rx: dp.pins.gpio16,
+                cts: None,
+                rts: None,
+            },
+            config,
+        )
+        .unwrap();
+        let mut re_de = dp.pins.gpio2.into_output().unwrap();
+        re_de.set_low().unwrap();
+        create_thyracont_sensor(
+            uart,
+            1,
+            re_de,
+            controller.sensor_chanel(),
+            &mut timer_service,
+        )
+    };
+
+    let thyracont_present = match res {
+        Ok((timer, addr)) => {
+            println!("Thyracont Sensor found at address {addr}!");
+            Some(timer)
+        }
+        Err(e) => {
+            println!("Thyracont Sensor not found: {e}");
+            None
+        }
+    };
 
     println!("Initialising display...");
     create_display(
@@ -83,7 +129,7 @@ fn main() {
     println!("Ready!");
 
     loop {
-        controller.poll(&mut sensors_timer, &mut klapan);
+        controller.poll(&mut sensors_timer, &mut klapan, thyracont_present.is_some());
     }
 }
 
@@ -121,7 +167,7 @@ where
                 false => EncoderCommand::Pull,
             };
             if let Err(e) = encoder_ch.send_deadline(cmd, now + Duration::from_millis(1)) {
-                println!("Failed to send button state: {}", e);
+                println!("Failed to send button state: {e}");
             } else {
                 prev_btn_state = new_btn_state;
             }
@@ -135,7 +181,7 @@ where
         };
 
         if let Err(e) = encoder_ch.send_deadline(cmd, now + Duration::from_millis(1)) {
-            println!("Failed to send encoder event: {}", e);
+            println!("Failed to send encoder event: {e}");
         }
     })?;
 
@@ -169,7 +215,7 @@ where
     }
 
     fn print_read_failed(addr: u8, e: I2cError) {
-        println!("Failed to read I2C sensor at {}: {}", addr, e);
+        println!("Failed to read I2C sensor at {addr}: {e}");
     }
 
     let config = i2c::config::MasterConfig::new().baudrate(100.kHz().into());
@@ -204,7 +250,7 @@ where
 
         let now = Instant::now();
         if let Err(e) = sensor_channel.send_deadline(
-            controller::SensorResult { f, p },
+            controller::SensorResult::SctbSensorResult { f, p },
             now + Duration::from_millis(1),
         ) {
             println!("Failed to send sensor result: {}", e);
@@ -212,6 +258,53 @@ where
     })?;
 
     Ok(timer)
+}
+
+fn create_thyracont_sensor<P, E, PIN, PINE>(
+    mut serial: P,
+    addr: u8,
+    mut re_de: PIN,
+    sensor_channel: Sender<controller::SensorResult>,
+    timer_svc: &mut esp_idf_svc::timer::EspTaskTimerService,
+) -> anyhow::Result<(esp_idf_svc::timer::EspTimer, u8)>
+where
+    P: embedded_hal::serial::Read<u8, Error = E>
+        + embedded_hal::serial::Write<u8, Error = E>
+        + Send
+        + 'static,
+    PIN: embedded_hal::digital::v2::OutputPin<Error = PINE> + Send + 'static,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    let sensor = thyracont_sensor::TyracontSensor::new(addr);
+
+    match sensor.get_id(&mut serial, &mut re_de) {
+        Ok(Some(id)) => println!("Sensor id: {id}"),
+        Ok(None) => Err(FormatError::EmptyResponce)?,
+        Err(e) => Err(e)?,
+    }
+
+    let mut timer = timer_svc.timer(move || {
+        let p = match sensor.read(&mut serial, &mut re_de) {
+            Ok(Some(v)) => v,
+            Ok(None) => return,
+            Err(e) => {
+                println!("Failed to read TyracontSensor: {e}");
+                return;
+            }
+        };
+
+        let now = Instant::now();
+        if let Err(e) = sensor_channel.send_deadline(
+            controller::SensorResult::TyracontSensorResult { p },
+            now + Duration::from_millis(1),
+        ) {
+            println!("Failed to send TyracontSensor sensor result: {e}");
+        }
+    })?;
+
+    timer.every(Duration::from_millis(80)).unwrap();
+
+    Ok((timer, addr))
 }
 
 fn create_display<SCLK, SDO, CS, DC, RESET, E>(
@@ -256,9 +349,7 @@ where
     std::thread::Builder::new()
         .stack_size(12 * 1024)
         .name("Display".to_string())
-        .spawn(move || {
-            display::dispaly_thread(disp, disp_channel)
-        })?;
+        .spawn(move || display::dispaly_thread(disp, disp_channel))?;
 
     Ok(())
 }

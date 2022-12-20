@@ -208,9 +208,14 @@ where
         (d.0 as i32, d.1 as i32)
     };
 
+    const ITEMS_Y_OFFSET: i32 = 0;
+    const LINE_SHIFT: i32 = 0;
+
+    //-------------------------------------------------------------------------
+
     let pos = Text::with_baseline(
         " Порог ",
-        Point::new(5, 2),
+        Point::new(5, ITEMS_Y_OFFSET),
         if selected_parameter == SelectedParameter::Threshold {
             small_font_selected
         } else {
@@ -247,9 +252,14 @@ where
 
     value.draw(display)?;
 
+    //-------------------------------------------------------------------------
+
     let pos = Text::with_baseline(
         " Интервал ",
-        Point::new(5, 2 + (small_font.font.character_size.height + 1) as i32),
+        Point::new(
+            5,
+            ITEMS_Y_OFFSET + (small_font.font.character_size.height as i32 + LINE_SHIFT),
+        ),
         if selected_parameter == SelectedParameter::UpdatePeriodMs {
             small_font_selected
         } else {
@@ -286,11 +296,61 @@ where
 
     value.draw(display)?;
 
+    //-------------------------------------------------------------------------
+
+    let pos = Text::with_baseline(
+        " Датчик ",
+        Point::new(
+            5,
+            ITEMS_Y_OFFSET + (small_font.font.character_size.height as i32 + LINE_SHIFT) * 2,
+        ),
+        if selected_parameter == SelectedParameter::PSensorSelect {
+            small_font_selected
+        } else {
+            small_font
+        },
+        Baseline::Top,
+    )
+    .draw(display)?;
+
+    let sens_name = if values.try_use_alternative_sensor {
+        "THYRACON"
+    } else {
+        "SCTB"
+    };
+    let value = Text::with_text_style(
+        sens_name,
+        Point::new(display_w - 10, pos.y),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    );
+
+    if selected_parameter == SelectedParameter::PSensorSelect {
+        let rect = gen_text_bounding_rect(&value, false);
+        draw_arrows_to_rect(
+            display,
+            &rect,
+            3,
+            -1,
+            2,
+            PrimitiveStyle::with_fill(BinaryColor::On),
+        )?;
+        rect.into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .draw(display)?;
+    }
+
+    value.draw(display)?;
+
+    //-------------------------------------------------------------------------
+
     Text::with_baseline(
         " Сохранить и выйти ",
         Point::new(
             5,
-            2 + ((small_font.font.character_size.height + 1) * 2) as i32,
+            ITEMS_Y_OFFSET + (small_font.font.character_size.height as i32 + LINE_SHIFT) * 3,
         ),
         if selected_parameter == SelectedParameter::SaveAndExit {
             small_font_selected
@@ -562,7 +622,8 @@ where
         Point::new(2, display_h),
         MonoTextStyleBuilder::from(&small_font)
             .background_color(BinaryColor::On)
-            .text_color(BinaryColor::Off).build(),
+            .text_color(BinaryColor::Off)
+            .build(),
         Baseline::Bottom,
     )
     .draw(display)?;

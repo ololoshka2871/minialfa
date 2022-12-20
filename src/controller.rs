@@ -19,9 +19,9 @@ pub enum EncoderCommand {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct SensorResult {
-    pub f: f32,
-    pub p: f32,
+pub enum SensorResult {
+    SctbSensorResult { f: f32, p: f32 },
+    TyracontSensorResult { p: f32 },
 }
 
 pub enum DisplayCommand {
@@ -49,6 +49,7 @@ pub enum DisplayCommand {
 pub struct Parameters {
     pub threshold: f32,
     pub update_period_ms: u32,
+    pub try_use_alternative_sensor: bool,
 }
 
 #[derive(PartialEq, Clone, Copy, FromPrimitive, Default, Debug)]
@@ -56,6 +57,7 @@ pub enum SelectedParameter {
     #[default]
     Threshold,
     UpdatePeriodMs,
+    PSensorSelect,
     SaveAndExit,
 }
 
@@ -96,6 +98,7 @@ pub struct Controller {
     current_setup_parameter: SelectedParameter,
 
     prev_p: f32,
+    prev_f: f32,
 }
 
 impl Controller {
@@ -112,6 +115,7 @@ impl Controller {
             current_setup_parameter: SelectedParameter::Threshold,
 
             prev_p: 0.0,
+            prev_f: 0.0,
         }
     }
 
@@ -138,6 +142,7 @@ impl Controller {
         &mut self,
         sensors_timer: &mut TIMER,
         klapan: &mut crate::klapan::Klapan<PIN>,
+        thyracont_present: bool,
     ) where
         TIMER: embedded_svc::timer::PeriodicTimer + embedded_svc::timer::Timer,
         PIN: embedded_hal::digital::v2::OutputPin<Error = E>,
@@ -184,7 +189,26 @@ impl Controller {
         } else if let Ok(res) = self.sensors.1.try_recv() {
             //println!("Sensor result: {:?}", res);
             if self.current_state == State::Measuring {
-                if self.prev_p > res.p && res.p <= self.parameters.threshold {
+                let p = match res {
+                    SensorResult::SctbSensorResult { f, p } => {
+                        self.prev_f = f;
+                        if self.parameters.try_use_alternative_sensor && thyracont_present {
+                            self.prev_p
+                        } else {
+                            p
+                        }
+                    }
+                    SensorResult::TyracontSensorResult { p } => {
+                        // ignore this sesor result if disabled
+                        if self.parameters.try_use_alternative_sensor {
+                            Self::mbar2mm_hg(p)
+                        } else {
+                            return;
+                        }
+                    }
+                };
+
+                if self.prev_p > p && p <= self.parameters.threshold {
                     // end -> result screen
                     self.current_state = State::Result;
 
@@ -193,8 +217,8 @@ impl Controller {
                     self.display
                         .0
                         .send(DisplayCommand::Result {
-                            p: res.p,
-                            f: res.f,
+                            p: p,
+                            f: self.prev_f,
                             threashold: self.parameters.threshold,
                         })
                         .unwrap()
@@ -203,13 +227,13 @@ impl Controller {
                     self.display
                         .0
                         .send(DisplayCommand::Measure {
-                            f: Some(res.f),
-                            p: Some(res.p),
+                            f: Some(self.prev_f),
+                            p: Some(p),
                             threashold: self.parameters.threshold,
                         })
                         .unwrap();
                 }
-                self.prev_p = res.p;
+                self.prev_p = p;
             }
         } else {
             std::thread::sleep(Duration::from_millis(10));
@@ -339,6 +363,10 @@ impl Controller {
                     }
                     _ => {}
                 },
+                SelectedParameter::PSensorSelect => {
+                    self.parameters.try_use_alternative_sensor ^= true
+                }
+
                 SelectedParameter::SaveAndExit => { /* nothing */ }
             }
 
@@ -351,6 +379,10 @@ impl Controller {
                 .unwrap();
         }
     }
+
+    fn mbar2mm_hg(p: f32) -> f32 {
+        p * 0.7500616
+    }
 }
 
 impl Default for Parameters {
@@ -358,6 +390,7 @@ impl Default for Parameters {
         Self {
             threshold: 1.0,
             update_period_ms: 100,
+            try_use_alternative_sensor: false,
         }
     }
 }
