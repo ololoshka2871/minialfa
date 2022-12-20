@@ -100,7 +100,7 @@ fn main() {
         )
     };
 
-    let thyracont_present = match res {
+    let mut thyracont_update_timer = match res {
         Ok((timer, addr)) => {
             println!("Thyracont Sensor found at address {addr}!");
             Some(timer)
@@ -129,7 +129,7 @@ fn main() {
     println!("Ready!");
 
     loop {
-        controller.poll(&mut sensors_timer, &mut klapan, thyracont_present.is_some());
+        controller.poll(&mut sensors_timer, &mut thyracont_update_timer, &mut klapan);
     }
 }
 
@@ -283,7 +283,7 @@ where
         Err(e) => Err(e)?,
     }
 
-    let mut timer = timer_svc.timer(move || {
+    let timer = timer_svc.timer(move || {
         let p = match sensor.read(&mut serial, &mut re_de) {
             Ok(Some(v)) => v,
             Ok(None) => return,
@@ -301,8 +301,6 @@ where
             println!("Failed to send TyracontSensor sensor result: {e}");
         }
     })?;
-
-    timer.every(Duration::from_millis(80)).unwrap();
 
     Ok((timer, addr))
 }

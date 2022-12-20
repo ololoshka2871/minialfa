@@ -71,12 +71,13 @@ enum State {
 
 #[derive(PartialEq, Clone, Copy, FromPrimitive)]
 enum TitleOptions {
-    Start = 0,
-    Setup = 1,
+    Auto = 0,
+    Manual = 1,
+    Setup = 2,
     COUNT,
 }
 
-static TITLE_OPTIONS: [&'static str; 2] = ["Начать", "Настройки"];
+static TITLE_OPTIONS: [&'static str; 3] = ["Авто", "Ручной", "Настройки"];
 
 const MIN_PREASURE: f32 = 1.0;
 const MAX_PRESSURE: f32 = 800.0;
@@ -110,7 +111,7 @@ impl Controller {
 
             parameters: Default::default(), // TODO: load
 
-            title_option: TitleOptions::Start,
+            title_option: TitleOptions::Auto,
             current_state: State::Title,
             current_setup_parameter: SelectedParameter::Threshold,
 
@@ -140,9 +141,9 @@ impl Controller {
 
     pub fn poll<TIMER, E, PIN>(
         &mut self,
-        sensors_timer: &mut TIMER,
+        sctb_sensors_timer: &mut TIMER,
+        thyracont_update_timer: &mut Option<TIMER>,
         klapan: &mut crate::klapan::Klapan<PIN>,
-        thyracont_present: bool,
     ) where
         TIMER: embedded_svc::timer::PeriodicTimer + embedded_svc::timer::Timer,
         PIN: embedded_hal::digital::v2::OutputPin<Error = E>,
@@ -159,11 +160,18 @@ impl Controller {
             match self.current_state {
                 State::Title => {
                     if self.process_title_cmd(res) {
-                        sensors_timer
+                        sctb_sensors_timer
                             .every(Duration::from_millis(
                                 self.parameters.update_period_ms as u64,
                             ))
+                            .expect("Failed to starts sensors");
+
+                        thyracont_update_timer.as_mut().map(|t| {
+                            t.every(Duration::from_millis(
+                                self.parameters.update_period_ms as u64,
+                            ))
                             .expect("Failed to starts sensors")
+                        });
                     }
                 }
                 State::Setup => self.process_setup(res),
@@ -171,9 +179,10 @@ impl Controller {
                     EncoderCommand::Pull => {
                         // отмена измерения, возврат на главный экран
                         self.current_state = State::Title;
-                        self.title_option = TitleOptions::Start;
+                        self.title_option = TitleOptions::Auto;
 
-                        let _ = sensors_timer.cancel(); // result unused
+                        sctb_sensors_timer.cancel().unwrap();
+                        thyracont_update_timer.as_mut().map(|t| t.cancel().unwrap());
 
                         self.display
                             .0
@@ -192,7 +201,9 @@ impl Controller {
                 let p = match res {
                     SensorResult::SctbSensorResult { f, p } => {
                         self.prev_f = f;
-                        if self.parameters.try_use_alternative_sensor && thyracont_present {
+                        if self.parameters.try_use_alternative_sensor
+                            && thyracont_update_timer.is_some()
+                        {
                             self.prev_p
                         } else {
                             p
@@ -208,11 +219,15 @@ impl Controller {
                     }
                 };
 
-                if self.prev_p > p && p <= self.parameters.threshold {
+                if self.title_option == TitleOptions::Auto // Only in auto mode
+                    && self.prev_p > p
+                    && p <= self.parameters.threshold
+                {
                     // end -> result screen
                     self.current_state = State::Result;
 
-                    sensors_timer.cancel().unwrap();
+                    sctb_sensors_timer.cancel().unwrap();
+                    thyracont_update_timer.as_mut().map(|t| t.cancel().unwrap());
 
                     self.display
                         .0
@@ -275,7 +290,7 @@ impl Controller {
             }
             EncoderCommand::Pull => {
                 match self.title_option {
-                    TitleOptions::Start => {
+                    TitleOptions::Auto | TitleOptions::Manual => {
                         // enter working cycle
                         self.prev_p = 0.0;
                         self.current_state = State::Measuring;

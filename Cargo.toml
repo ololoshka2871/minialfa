@@ -1,6 +1,6 @@
 [package]
 name = "minialfa"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["ololoshka2871 <SweetTreasure@2ch.hk>"]
 edition = "2021"
 resolver = "2"
