@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use crossbeam::channel::{self, Receiver, Sender};
+use esp_idf_svc::timer::EspTimer;
 use num_derive::FromPrimitive;
 
 use crate::klapan::KlapanState;
@@ -139,13 +140,12 @@ impl Controller {
         self.display.1.clone()
     }
 
-    pub fn poll<TIMER, E, PIN>(
+    pub fn poll<E, PIN>(
         &mut self,
-        sctb_sensors_timer: &mut TIMER,
-        thyracont_update_timer: &mut Option<TIMER>,
+        sctb_sensors_timer: &mut EspTimer,
+        thyracont_update_timer: &mut Option<EspTimer>,
         klapan: &mut crate::klapan::Klapan<PIN>,
     ) where
-        TIMER: embedded_svc::timer::PeriodicTimer + embedded_svc::timer::Timer,
         PIN: embedded_hal::digital::v2::OutputPin<Error = E>,
         E: std::fmt::Debug,
     {
