@@ -12,6 +12,7 @@ use esp_idf_hal::gpio::{AnyIOPin, PinDriver};
 use esp_idf_hal::gpio::{InputPin, OutputPin};
 use esp_idf_hal::peripheral::Peripheral;
 use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_svc::nvs::{EspNvs, EspNvsPartition, NvsDefault};
 use esp_idf_svc::timer::EspTimerService;
 
 use std::time::Duration;
@@ -42,7 +43,19 @@ fn main() {
     let dp = Peripherals::take().unwrap();
     let timer_service = EspTimerService::new().unwrap();
 
-    let mut controller = controller::Controller::new();
+    let nvs_default_partition: EspNvsPartition<NvsDefault> =
+        esp_idf_svc::nvs::EspDefaultNvsPartition::take().unwrap();
+
+    let settings_namespace = "minialfa";
+    let nvs = match EspNvs::new(nvs_default_partition, settings_namespace, true) {
+        Ok(nvs) => {
+            println!("Got namespace {:?} from default partition", settings_namespace);
+            nvs
+        }
+        Err(e) => panic!("Could't get namespace {:?}", e),
+    };
+
+    let mut controller = controller::Controller::new(nvs);
 
     let mut klapan = klapan::Klapan::new(PinDriver::output(dp.pins.gpio12).unwrap());
 

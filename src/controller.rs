@@ -6,7 +6,10 @@
 use std::time::Duration;
 
 use crossbeam::channel::{self, Receiver, Sender};
-use esp_idf_svc::timer::EspTimer;
+use esp_idf_svc::{
+    nvs::{EspNvs, NvsPartitionId},
+    timer::EspTimer,
+};
 use num_derive::FromPrimitive;
 
 use crate::klapan::KlapanState;
@@ -88,7 +91,7 @@ const MIN_INTERVAL: u32 = 50;
 const MAX_INTERVAL: u32 = 500;
 const INTERVAL_STEP: u32 = 50;
 
-pub struct Controller {
+pub struct Controller<T: NvsPartitionId> {
     encoder: (Sender<EncoderCommand>, Receiver<EncoderCommand>),
     sensors: (Sender<SensorResult>, Receiver<SensorResult>),
     display: (Sender<DisplayCommand>, Receiver<DisplayCommand>),
@@ -101,16 +104,18 @@ pub struct Controller {
 
     prev_p: f32,
     prev_f: f32,
+
+    nvs: EspNvs<T>,
 }
 
-impl Controller {
-    pub fn new() -> Self {
+impl<T: NvsPartitionId> Controller<T> {
+    pub fn new(nvs: EspNvs<T>) -> Self {
         Self {
             encoder: channel::bounded(3),
             sensors: channel::bounded(3),
             display: channel::bounded(3),
 
-            parameters: Default::default(), // TODO: load
+            parameters: Parameters::load(&nvs),
 
             title_option: TitleOptions::Auto,
             current_state: State::Title,
@@ -118,6 +123,8 @@ impl Controller {
 
             prev_p: 0.0,
             prev_f: 0.0,
+
+            nvs,
         }
     }
 
@@ -337,6 +344,8 @@ impl Controller {
                     self.current_setup_parameter = SelectedParameter::Threshold;
                     self.title_option = TitleOptions::Setup;
 
+                    self.parameters.store(&mut self.nvs);
+
                     self.display.0.send(DisplayCommand::TitleScreen {
                         option: TITLE_OPTIONS[self.title_option as usize],
                         selected: false,
@@ -411,5 +420,48 @@ impl Default for Parameters {
             update_period_ms: 100,
             try_use_alternative_sensor: false,
         }
+    }
+}
+
+// parameters storage names
+const THRESHOLD: &str = "threshold";
+const UPDATE_PERIOD_MS: &str = "upd_per_ms";
+const TRY_USE_ALTERNATIVE_SENSOR: &str = "alt_sens";
+
+impl Parameters {
+    pub fn load(nvs: &EspNvs<impl NvsPartitionId>) -> Self {
+        let threshold = nvs
+            .get_u32(THRESHOLD)
+            .map(|v| {
+                v.map(|v| unsafe { std::mem::transmute::<_, f32>(v) })
+                    .unwrap_or(1.0)
+            })
+            .unwrap();
+        let update_period_ms = nvs
+            .get_u32(UPDATE_PERIOD_MS)
+            .map(|v| v.unwrap_or(100))
+            .unwrap();
+        let try_use_alternative_sensor = nvs
+            .get_u8(TRY_USE_ALTERNATIVE_SENSOR)
+            .map(|v| v.unwrap_or(0) != 0)
+            .unwrap();
+
+        Self {
+            threshold,
+            update_period_ms,
+            try_use_alternative_sensor,
+        }
+    }
+
+    pub fn store(&self, nvs: &mut EspNvs<impl NvsPartitionId>) {
+        nvs.set_u32(THRESHOLD, unsafe { std::mem::transmute(self.threshold) })
+            .unwrap();
+        nvs.set_u32(UPDATE_PERIOD_MS, self.update_period_ms)
+            .unwrap();
+        nvs.set_u8(
+            TRY_USE_ALTERNATIVE_SENSOR,
+            self.try_use_alternative_sensor as u8,
+        )
+        .unwrap();
     }
 }
