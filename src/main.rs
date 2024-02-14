@@ -44,7 +44,7 @@ fn main() {
 
     let mut controller = controller::Controller::new();
 
-    let mut klapan = klapan::Klapan::new(PinDriver::output(dp.pins.gpio27).unwrap());
+    let mut klapan = klapan::Klapan::new(PinDriver::output(dp.pins.gpio12).unwrap());
 
     println!("Initialising rotary encoder");
     let _encoder = create_encoder(

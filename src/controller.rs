@@ -260,6 +260,7 @@ impl Controller {
             EncoderCommand::Increment | EncoderCommand::Decrement => {
                 self.title_option = match (self.title_option, cmd) {
                     (TitleOptions::Auto, EncoderCommand::Decrement) => TitleOptions::Setup,
+
                     _ => num::FromPrimitive::from_u32(
                         (self.title_option as u32).wrapping_add_signed(
                             if cmd == EncoderCommand::Increment {

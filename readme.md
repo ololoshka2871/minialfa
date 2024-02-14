@@ -36,3 +36,14 @@ GND - GND
 ### UART
 RX - GPIO3
 TX - GPIO1
+
+### Klapan
+GPIO:
+OUT - GPIO12
+
+### Thyracon sensor pinout
+4 - +24V
+5 - GND
+10 - A
+11 - B
+12 - DGND

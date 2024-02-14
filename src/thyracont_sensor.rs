@@ -47,8 +47,8 @@ impl TyracontSensor {
         let addr = self.addr;
         write!(&mut id_req, "{addr:03}T").unwrap();
 
-        Self::flush_rx(port)?;
         Self::write_request(port, &id_req, re_de)?;
+        Self::flush_rx(port)?;
 
         thread::sleep(Duration::from_millis(35));
 
