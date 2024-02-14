@@ -179,21 +179,6 @@ fn create_sensors<'d, I2C>(
 where
     I2C: i2c::I2c,
 {
-    /*
-    extern "C" {
-        fn i2c_set_timeout(
-            i2c_num: esp_idf_sys::i2c_port_t,
-            timeout: std::ffi::c_int,
-        ) -> esp_idf_sys::esp_err_t;
-
-        #[allow(unused)]
-        fn i2c_get_timeout(
-            i2c_num: esp_idf_sys::i2c_port_t,
-            timeout: *mut std::ffi::c_int,
-        ) -> esp_idf_sys::esp_err_t;
-    }
-    */
-
     fn print_read_failed(addr: u8, e: I2cError) {
         println!("Failed to read I2C sensor at {addr}: {e}");
     }
@@ -203,24 +188,15 @@ where
         .timeout(Duration::from_millis(5).into());
     let mut i2c = i2c::I2cDriver::new(i2c0, sda, scl, &config)?;
 
-    /*
-    unsafe {
-        //let mut ct: esp_idf_sys::c_types::c_int = 0;
-        //i2c_get_timeout(0, &mut ct);
-        //println!("Current i2c strech timout: {}", ct);
-        i2c_set_timeout(0, 50000);
-    }
-    */
-
     let p_sensor = i2c_sensor::I2CSensor::new(15);
-    let f_sensor = i2c_sensor::I2CSensor::new(12);
+    let f_sensor = i2c_sensor::I2CSensor::new(11);
 
     let timer = timer_svc.timer(move || {
         let p = match p_sensor.read(&mut i2c) {
             Ok(v) => v.pressure,
             Err(e) => {
                 print_read_failed(p_sensor.address(), e);
-                return;
+                f32::NAN
             }
         };
 
@@ -228,7 +204,7 @@ where
             Ok(v) => v.f_p,
             Err(e) => {
                 print_read_failed(f_sensor.address(), e);
-                return;
+                f32::NAN
             }
         };
 
