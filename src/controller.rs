@@ -99,6 +99,7 @@ pub struct Controller<T: NvsPartitionId> {
     parameters: Parameters,
 
     title_option: TitleOptions,
+    current_mode: TitleOptions,
     current_state: State,
     current_setup_parameter: SelectedParameter,
 
@@ -118,6 +119,7 @@ impl<T: NvsPartitionId> Controller<T> {
             parameters: Parameters::load(&nvs),
 
             title_option: TitleOptions::Auto,
+            current_mode: TitleOptions::Auto,
             current_state: State::Title,
             current_setup_parameter: SelectedParameter::Threshold,
 
@@ -186,7 +188,7 @@ impl<T: NvsPartitionId> Controller<T> {
                     EncoderCommand::Pull => {
                         // отмена измерения, возврат на главный экран
                         self.current_state = State::Title;
-                        self.title_option = TitleOptions::Auto;
+                        self.title_option = self.current_mode;
 
                         sctb_sensors_timer.cancel().unwrap();
                         thyracont_update_timer.as_mut().map(|t| t.cancel().unwrap());
@@ -304,6 +306,7 @@ impl<T: NvsPartitionId> Controller<T> {
                     TitleOptions::Auto | TitleOptions::Manual => {
                         // enter working cycle
                         self.prev_p = 0.0;
+                        self.current_mode = self.title_option; // save current mode for return
                         self.current_state = State::Measuring;
                         self.display
                             .0
