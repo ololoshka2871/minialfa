@@ -48,8 +48,8 @@ fn main() {
 
     println!("Initialising rotary encoder");
     let _encoder = create_encoder(
-        PinDriver::input(dp.pins.gpio32).unwrap(),
         PinDriver::input(dp.pins.gpio33).unwrap(),
+        PinDriver::input(dp.pins.gpio32).unwrap(),
         PinDriver::input(dp.pins.gpio19).unwrap(),
         controller.command_chanel(),
         &timer_service,
