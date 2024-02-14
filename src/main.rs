@@ -164,7 +164,7 @@ where
         }
     })?;
 
-    timer.every(Duration::from_millis(10)).unwrap();
+    timer.every(Duration::from_millis(2)).unwrap();
 
     Ok(timer)
 }
@@ -179,6 +179,7 @@ fn create_sensors<'d, I2C>(
 where
     I2C: i2c::I2c,
 {
+    /*
     extern "C" {
         fn i2c_set_timeout(
             i2c_num: esp_idf_sys::i2c_port_t,
@@ -191,20 +192,25 @@ where
             timeout: *mut std::ffi::c_int,
         ) -> esp_idf_sys::esp_err_t;
     }
+    */
 
     fn print_read_failed(addr: u8, e: I2cError) {
         println!("Failed to read I2C sensor at {addr}: {e}");
     }
 
-    let config = i2c::I2cConfig::new().baudrate(100.kHz().into());
+    let config = i2c::I2cConfig::new()
+        .baudrate(100.kHz().into())
+        .timeout(Duration::from_millis(5).into());
     let mut i2c = i2c::I2cDriver::new(i2c0, sda, scl, &config)?;
 
+    /*
     unsafe {
         //let mut ct: esp_idf_sys::c_types::c_int = 0;
         //i2c_get_timeout(0, &mut ct);
         //println!("Current i2c strech timout: {}", ct);
         i2c_set_timeout(0, 50000);
     }
+    */
 
     let p_sensor = i2c_sensor::I2CSensor::new(15);
     let f_sensor = i2c_sensor::I2CSensor::new(12);

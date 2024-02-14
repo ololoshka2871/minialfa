@@ -258,16 +258,19 @@ impl Controller {
     fn process_title_cmd(&mut self, cmd: EncoderCommand) -> bool {
         match cmd {
             EncoderCommand::Increment | EncoderCommand::Decrement => {
-                self.title_option = num::FromPrimitive::from_u32(
-                    (self.title_option as u32).wrapping_add_signed(
-                        if cmd == EncoderCommand::Increment {
-                            1i32
-                        } else {
-                            -1
-                        },
-                    ) % (TitleOptions::COUNT as u32),
-                )
-                .unwrap();
+                self.title_option = match (self.title_option, cmd) {
+                    (TitleOptions::Auto, EncoderCommand::Decrement) => TitleOptions::Setup,
+                    _ => num::FromPrimitive::from_u32(
+                        (self.title_option as u32).wrapping_add_signed(
+                            if cmd == EncoderCommand::Increment {
+                                1i32
+                            } else {
+                                -1
+                            },
+                        ) % (TitleOptions::COUNT as u32),
+                    )
+                    .unwrap(),
+                };
 
                 self.display
                     .0

@@ -3,3 +3,7 @@
 /target
 /Cargo.lock
 *.bak
+
+# misc
+.env
+.vscode/launch.json
