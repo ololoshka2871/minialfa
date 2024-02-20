@@ -88,8 +88,8 @@ const MAX_PRESSURE: f32 = 800.0;
 const PREASURE_STEP: f32 = 1.0;
 
 const MIN_INTERVAL: u32 = 50;
-const MAX_INTERVAL: u32 = 500;
-const INTERVAL_STEP: u32 = 50;
+const MAX_INTERVAL: u32 = 200;
+const INTERVAL_STEP: u32 = 10;
 
 pub struct Controller<T: NvsPartitionId> {
     encoder: (Sender<EncoderCommand>, Receiver<EncoderCommand>),

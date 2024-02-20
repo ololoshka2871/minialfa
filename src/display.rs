@@ -18,6 +18,8 @@ use crate::controller::{DisplayCommand, SelectedParameter};
 #[allow(unused)]
 use crate::support::print_time_of;
 
+const MIN_DYNAMIC_RANGE: f32 = 10.0;
+
 pub fn dispaly_thread<DI>(
     mut disp: GraphicsMode<DI>,
     disp_channel: crossbeam::channel::Receiver<DisplayCommand>,
@@ -437,11 +439,15 @@ where
         }
     }
 
-    let range = history
+    let mut range = history
         .iter()
         .max_by_key(|v| ordered_float::OrderedFloat(**v))
         .unwrap_or(&800.0)
         - threashold;
+
+    if range < MIN_DYNAMIC_RANGE {
+        range = MIN_DYNAMIC_RANGE;
+    }
 
     let max_y = display_h as u32 - 20;
 
@@ -579,7 +585,20 @@ where
 
     println!("Results plot range: {:?}", (range_min, range_max));
 
-    let thrend = crate::linear_regression::linear_regression(&f_history);
+    // в начале измерения происходит резкий скачек, поэтому начальные точки погут быть нерелевантны
+    // необходимо обойти f_history сзади и найти номер последней точки, где сограняется устйчивай спад значений
+    let mut last_p = f_history.last().map(|p| p.0).unwrap_or(0.0);
+    let mut max_p_index = 0;
+    for (i, (p, _)) in f_history.iter().enumerate().rev() {
+        if *p < last_p {
+            max_p_index = i;
+            break;
+        } else {
+            last_p = *p;
+        };
+    }
+
+    let thrend = crate::linear_regression::linear_regression(&f_history[max_p_index..]);
 
     for line_n in 0..display_w as u32 {
         let h_e = select_mapped_point(line_n);
