@@ -37,8 +37,8 @@ where
             Ok(DisplayCommand::TitleScreen { option, selected }) => {
                 draw_title_screen(&mut disp, option, selected)
             }
-            Ok(DisplayCommand::SetupMenu { values, selected }) => {
-                draw_menu(&mut disp, values, selected)
+            Ok(DisplayCommand::SetupMenu { values, selected, precision }) => {
+                draw_menu(&mut disp, values, precision, selected)
             }
             Ok(DisplayCommand::Measure { f, p, threashold }) => {
                 match draw_measure(&mut disp, f, p, threashold, &mut history, f_fistory) {
@@ -185,6 +185,7 @@ where
 fn draw_menu<DI>(
     display: &mut GraphicsMode<DI>,
     values: super::controller::Parameters,
+    precission: super::controller::Precission,
     selected_parameter: SelectedParameter,
 ) -> Result<(), display_interface::DisplayError>
 where
@@ -227,7 +228,11 @@ where
     )
     .draw(display)?;
 
-    let tv = format!("{:0.0} mmHg", values.threshold);
+    let tv = format!(
+        "{:0.prec$} mmHg",
+        values.threshold,
+        prec = precission.value()
+    );
     let value = Text::with_text_style(
         tv.as_str(),
         Point::new(display_w - 10, pos.y),

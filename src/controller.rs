@@ -36,6 +36,7 @@ pub enum DisplayCommand {
     SetupMenu {
         values: Parameters,
         selected: SelectedParameter,
+        precision: Precission,
     },
     Measure {
         f: Option<f32>,
@@ -47,6 +48,53 @@ pub enum DisplayCommand {
         p: f32,
         threashold: f32,
     },
+}
+
+#[derive(Clone, Copy, Default, FromPrimitive)]
+pub enum Precission {
+    #[default]
+    C1,
+    C01,
+    C001,
+}
+
+impl Precission {
+    pub fn value(&self) -> usize {
+        match self {
+            Precission::C1 => 0,
+            Precission::C01 => 1,
+            Precission::C001 => 2,
+        }
+    }
+
+    fn increment_value(current: f32) -> f32 {
+        match current.into() {
+            Precission::C1 => 1.0,
+            Precission::C01 => 0.1,
+            Precission::C001 => 0.01,
+        }
+    }
+
+    fn decrement_value(current: f32) -> f32 {
+        let inc = Self::increment_value(current);
+        if current - inc < inc {
+            inc / 10.0
+        } else {
+            inc
+        }
+    }
+}
+
+impl From<f32> for Precission {
+    fn from(v: f32) -> Self {
+        if v >= 0.0 && v <= 0.09 {
+            Precission::C001
+        } else if v <= 0.9 {
+            Precission::C01
+        } else {
+            Precission::C1
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -83,9 +131,8 @@ enum TitleOptions {
 
 static TITLE_OPTIONS: [&'static str; 3] = ["Авто", "Ручной", "Настройки"];
 
-const MIN_PREASURE: f32 = 1.0;
+const MIN_PREASURE: f32 = 0.01;
 const MAX_PRESSURE: f32 = 800.0;
-const PREASURE_STEP: f32 = 1.0;
 
 const MIN_INTERVAL: u32 = 50;
 const MAX_INTERVAL: u32 = 200;
@@ -329,6 +376,7 @@ impl<T: NvsPartitionId> Controller<T> {
                             .send(DisplayCommand::SetupMenu {
                                 values: self.parameters,
                                 selected: self.current_setup_parameter,
+                                precision: Precission::from(self.parameters.threshold),
                             })
                             .unwrap();
                         false
@@ -362,6 +410,7 @@ impl<T: NvsPartitionId> Controller<T> {
                     self.display.0.send(DisplayCommand::SetupMenu {
                         values: self.parameters,
                         selected: self.current_setup_parameter,
+                        precision: Precission::from(self.parameters.threshold),
                     })
                 }
             }
@@ -371,12 +420,14 @@ impl<T: NvsPartitionId> Controller<T> {
                 SelectedParameter::Threshold => match cmd {
                     EncoderCommand::Increment => {
                         if self.parameters.threshold < MAX_PRESSURE {
-                            self.parameters.threshold += PREASURE_STEP;
+                            let step = Precission::increment_value(self.parameters.threshold);
+                            self.parameters.threshold = ((self.parameters.threshold / step).round() + 1.0) * step;
                         }
                     }
                     EncoderCommand::Decrement => {
                         if self.parameters.threshold > MIN_PREASURE {
-                            self.parameters.threshold -= PREASURE_STEP;
+                            let step = Precission::decrement_value(self.parameters.threshold);
+                            self.parameters.threshold = ((self.parameters.threshold / step).round() - 1.0) * step;
                         }
                     }
                     _ => {}
@@ -406,6 +457,7 @@ impl<T: NvsPartitionId> Controller<T> {
                 .send(DisplayCommand::SetupMenu {
                     values: self.parameters,
                     selected: self.current_setup_parameter,
+                    precision: Precission::from(self.parameters.threshold),
                 })
                 .unwrap();
         }
