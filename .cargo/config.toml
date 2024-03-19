@@ -7,7 +7,8 @@ target = "xtensa-esp32-espidf"
 
 [target.xtensa-esp32-espidf]
 linker = "ldproxy"
-runner = "./run_on_host.sh"
+#runner = "./run_on_host.sh"
+runner = "./flash.wsl.sh"
 
 [target.xtensa-esp32s2-espidf]
 linker = "ldproxy"
@@ -35,5 +36,8 @@ ESP_IDF_VERSION = { value = "branch:release/v4.4" }
 #ESP_IDF_VERSION = { value = "master" }
 
 [alias]
-f = "espflash flash -p /dev/ttyUSB0 -b 921600"
-m = "espmonitor --target xtensa-esp32-espidf /dev/ttyUSB0"
+#f = "espflash flash -p /dev/ttyUSB0 -B 921600"
+# use cargo run
+
+#m = "espmonitor --target xtensa-esp32-espidf /dev/ttyS1"
+# use ./monitor.wsl.sh
