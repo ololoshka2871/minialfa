@@ -100,6 +100,7 @@ impl From<f32> for Precission {
 #[derive(Clone, Copy)]
 pub struct Parameters {
     pub threshold: f32,
+    pub wait_time_s: u32,
     pub update_period_ms: u32,
     pub try_use_alternative_sensor: bool,
 }
@@ -110,6 +111,7 @@ pub enum SelectedParameter {
     Threshold,
     UpdatePeriodMs,
     PSensorSelect,
+    WaitTimeS,
     SaveAndExit,
 }
 
@@ -134,6 +136,8 @@ static TITLE_OPTIONS: [&'static str; 3] = ["Авто", "Ручной", "Наст
 const MIN_PREASURE: f32 = 0.01;
 const MAX_PRESSURE: f32 = 800.0;
 
+const MAX_WAIT_TIME_S: u32 = 120;
+
 const MIN_INTERVAL: u32 = 50;
 const MAX_INTERVAL: u32 = 200;
 const INTERVAL_STEP: u32 = 10;
@@ -152,6 +156,8 @@ pub struct Controller<T: NvsPartitionId> {
 
     prev_p: f32,
     prev_f: f32,
+
+    start_waiting_time: Option<Duration>,
 
     nvs: EspNvs<T>,
 }
@@ -172,6 +178,8 @@ impl<T: NvsPartitionId> Controller<T> {
 
             prev_p: 0.0,
             prev_f: 0.0,
+
+            start_waiting_time: None,
 
             nvs,
         }
@@ -205,6 +213,8 @@ impl<T: NvsPartitionId> Controller<T> {
         PIN: embedded_hal::digital::v2::OutputPin<Error = E>,
         E: std::fmt::Debug,
     {
+        use esp_idf_svc::systime::EspSystemTime;
+
         match self.current_state {
             State::Measuring => klapan.set_state(KlapanState::Vacuum),
             _ => klapan.set_state(KlapanState::Atmosphere),
@@ -275,25 +285,48 @@ impl<T: NvsPartitionId> Controller<T> {
                     }
                 };
 
-                if self.title_option == TitleOptions::Auto // Only in auto mode
-                    && self.prev_p > p
-                    && p <= self.parameters.threshold
-                {
-                    // end -> result screen
-                    self.current_state = State::Result;
+                if let Some(start_waiting_time) = self.start_waiting_time {
+                    // Идет удержание
 
-                    sctb_sensors_timer.cancel().unwrap();
-                    thyracont_update_timer.as_mut().map(|t| t.cancel().unwrap());
+                    if (EspSystemTime {}.now() - start_waiting_time)
+                        >= Duration::from_secs(self.parameters.wait_time_s as u64)
+                    {
+                        self.start_waiting_time.take(); // clear waiting time
 
+                        // end -> result screen
+                        self.current_state = State::Result;
+
+                        sctb_sensors_timer.cancel().unwrap();
+                        thyracont_update_timer.as_mut().map(|t| t.cancel().unwrap());
+
+                        self.display
+                            .0
+                            .send(DisplayCommand::Result {
+                                p: p,
+                                f: self.prev_f,
+                                threashold: self.parameters.threshold,
+                            })
+                            .unwrap()
+                    }
+
+                    // update screen
                     self.display
                         .0
-                        .send(DisplayCommand::Result {
-                            p: p,
-                            f: self.prev_f,
+                        .send(DisplayCommand::Measure {
+                            f: Some(self.prev_f),
+                            p: Some(p),
                             threashold: self.parameters.threshold,
                         })
-                        .unwrap()
+                        .unwrap();
                 } else {
+                    // Only in auto mode
+                    if self.title_option == TitleOptions::Auto
+                        && self.prev_p > p
+                        && p <= self.parameters.threshold
+                    {
+                        self.start_waiting_time.replace(EspSystemTime {}.now());
+                    }
+
                     // update screen
                     self.display
                         .0
@@ -404,8 +437,13 @@ impl<T: NvsPartitionId> Controller<T> {
                 }
                 _ => {
                     self.current_setup_parameter =
-                        num::FromPrimitive::from_u32(self.current_setup_parameter as u32 + 1)
-                            .unwrap_or_default();
+                        // skip SelectedParameter::PSensorSelect
+                        if self.current_setup_parameter == SelectedParameter::UpdatePeriodMs {
+                            SelectedParameter::WaitTimeS
+                        } else {
+                            num::FromPrimitive::from_u32(self.current_setup_parameter as u32 + 1)
+                                .unwrap_or_default()
+                        };
 
                     self.display.0.send(DisplayCommand::SetupMenu {
                         values: self.parameters,
@@ -421,13 +459,15 @@ impl<T: NvsPartitionId> Controller<T> {
                     EncoderCommand::Increment => {
                         if self.parameters.threshold < MAX_PRESSURE {
                             let step = Precission::increment_value(self.parameters.threshold);
-                            self.parameters.threshold = ((self.parameters.threshold / step).round() + 1.0) * step;
+                            self.parameters.threshold =
+                                ((self.parameters.threshold / step).round() + 1.0) * step;
                         }
                     }
                     EncoderCommand::Decrement => {
                         if self.parameters.threshold > MIN_PREASURE {
                             let step = Precission::decrement_value(self.parameters.threshold);
-                            self.parameters.threshold = ((self.parameters.threshold / step).round() - 1.0) * step;
+                            self.parameters.threshold =
+                                ((self.parameters.threshold / step).round() - 1.0) * step;
                         }
                     }
                     _ => {}
@@ -448,6 +488,19 @@ impl<T: NvsPartitionId> Controller<T> {
                 SelectedParameter::PSensorSelect => {
                     self.parameters.try_use_alternative_sensor ^= true
                 }
+                SelectedParameter::WaitTimeS => match cmd {
+                    EncoderCommand::Increment => {
+                        if self.parameters.wait_time_s < MAX_WAIT_TIME_S {
+                            self.parameters.wait_time_s += 1;
+                        }
+                    }
+                    EncoderCommand::Decrement => {
+                        if self.parameters.wait_time_s > 0 {
+                            self.parameters.wait_time_s -= 1;
+                        }
+                    }
+                    _ => {}
+                },
 
                 SelectedParameter::SaveAndExit => { /* nothing */ }
             }
@@ -474,6 +527,7 @@ impl Default for Parameters {
             threshold: 1.0,
             update_period_ms: 100,
             try_use_alternative_sensor: false,
+            wait_time_s: 10,
         }
     }
 }
@@ -482,6 +536,7 @@ impl Default for Parameters {
 const THRESHOLD: &str = "threshold";
 const UPDATE_PERIOD_MS: &str = "upd_per_ms";
 const TRY_USE_ALTERNATIVE_SENSOR: &str = "alt_sens";
+const WAIT_TIME_S: &str = "wait_time_s";
 
 impl Parameters {
     pub fn load(nvs: &EspNvs<impl NvsPartitionId>) -> Self {
@@ -500,11 +555,13 @@ impl Parameters {
             .get_u8(TRY_USE_ALTERNATIVE_SENSOR)
             .map(|v| v.unwrap_or(0) != 0)
             .unwrap();
+        let wait_time_s = nvs.get_u32(WAIT_TIME_S).map(|v| v.unwrap_or(10)).unwrap();
 
         Self {
             threshold,
             update_period_ms,
             try_use_alternative_sensor,
+            wait_time_s,
         }
     }
 
@@ -518,5 +575,6 @@ impl Parameters {
             self.try_use_alternative_sensor as u8,
         )
         .unwrap();
+        nvs.set_u32(WAIT_TIME_S, self.wait_time_s).unwrap();
     }
 }

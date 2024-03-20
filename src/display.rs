@@ -6,7 +6,7 @@ use embedded_graphics::{
     prelude::{Dimensions, Point, Size},
     primitives::{Line, Primitive, PrimitiveStyle, Rectangle, Triangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
-    Drawable, Pixel,
+    Drawable,
 };
 
 use num::{rational::Ratio, Num};
@@ -37,9 +37,11 @@ where
             Ok(DisplayCommand::TitleScreen { option, selected }) => {
                 draw_title_screen(&mut disp, option, selected)
             }
-            Ok(DisplayCommand::SetupMenu { values, selected, precision }) => {
-                draw_menu(&mut disp, values, precision, selected)
-            }
+            Ok(DisplayCommand::SetupMenu {
+                values,
+                selected,
+                precision,
+            }) => draw_menu(&mut disp, values, precision, selected),
             Ok(DisplayCommand::Measure { f, p, threashold }) => {
                 match draw_measure(&mut disp, f, p, threashold, &mut history, f_fistory) {
                     Ok(h) => {
@@ -191,6 +193,9 @@ fn draw_menu<DI>(
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
+    #[allow(unused_imports)]
+    use embedded_graphics::Pixel;
+
     display.clear();
 
     let small_font_italic = MonoTextStyleBuilder::new()
@@ -276,7 +281,7 @@ where
     )
     .draw(display)?;
 
-    let uv = format!("{} ms", values.update_period_ms);
+    let uv = format!("{} мс", values.update_period_ms);
     let value = Text::with_text_style(
         uv.as_str(),
         Point::new(display_w - 10, pos.y),
@@ -305,6 +310,7 @@ where
 
     //-------------------------------------------------------------------------
 
+    /*
     let pos = Text::with_baseline(
         " Датчик ",
         Point::new(
@@ -336,6 +342,51 @@ where
     );
 
     if selected_parameter == SelectedParameter::PSensorSelect {
+        let rect = gen_text_bounding_rect(&value, false);
+        draw_arrows_to_rect(
+            display,
+            &rect,
+            3,
+            -1,
+            2,
+            PrimitiveStyle::with_fill(BinaryColor::On),
+        )?;
+        rect.into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+            .draw(display)?;
+    }
+
+    value.draw(display)?;
+    */
+
+    //-------------------------------------------------------------------------
+
+    let pos = Text::with_baseline(
+        " Ожидание ",
+        Point::new(
+            5,
+            ITEMS_Y_OFFSET + (small_font.font.character_size.height as i32 + LINE_SHIFT) * 2,
+        ),
+        if selected_parameter == SelectedParameter::WaitTimeS {
+            small_font_selected
+        } else {
+            small_font
+        },
+        Baseline::Top,
+    )
+    .draw(display)?;
+
+    let uv = format!("{} с", values.wait_time_s);
+    let value = Text::with_text_style(
+        uv.as_str(),
+        Point::new(display_w - 10, pos.y),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    );
+
+    if selected_parameter == SelectedParameter::WaitTimeS {
         let rect = gen_text_bounding_rect(&value, false);
         draw_arrows_to_rect(
             display,
@@ -421,6 +472,11 @@ where
         .text_color(BinaryColor::On)
         .build();
 
+    let small_font_selected = MonoTextStyleBuilder::from(&small_font)
+        .background_color(BinaryColor::On)
+        .text_color(BinaryColor::Off)
+        .build();
+
     let (display_w, display_h) = {
         let d = display.get_dimensions();
         (d.0 as i32, d.1 as i32)
@@ -481,7 +537,10 @@ where
     Text::with_text_style(
         format!("P: {:0.2}", p.unwrap_or(f32::NAN)).as_str(),
         Point::new(2, 2),
-        small_font,
+        match p {
+            Some(p) if p < threashold => small_font_selected,
+            _ => small_font,
+        },
         TextStyleBuilder::new()
             .alignment(Alignment::Left)
             .baseline(Baseline::Top)
@@ -510,7 +569,7 @@ fn draw_result<DI>(
     f: f32,
     p: f32,
     _threashold: f32,
-    f_history: Vec<(f32, f32)>,
+    _f_history: Vec<(f32, f32)>,
 ) -> Result<Vec<(f32, f32)>, display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
@@ -522,25 +581,13 @@ where
         .text_color(BinaryColor::On)
         .build();
 
-    let (display_w, display_h) = {
+    let (display_w, _display_h) = {
         let d = display.get_dimensions();
         (d.0 as i32, d.1 as i32)
     };
 
     let pos = Text::with_baseline("Давление:", Point::new(1, 2), small_font, Baseline::Top)
         .draw(display)?;
-
-    let select_mapped_point = |line_n: u32| {
-        transform_size(line_n, f_history.len() as u32 - 1, display_w as u32 - 1) as usize
-    };
-
-    let mapped_height = |h_e: usize, range_min: f32, range_max: f32, max_y: u32| {
-        transform_size(
-            f_history[h_e].1 - range_min,
-            max_y as f32,
-            range_max - range_min,
-        ) as i32
-    };
 
     Text::with_text_style(
         format!("{:0.02} mmHg", p).as_str(),
@@ -573,9 +620,22 @@ where
     .draw(display)?;
 
     // graph
-    let max_y = display_h as u32 - 20;
+    /*
+        let select_mapped_point = |line_n: u32| {
+        transform_size(line_n, _f_history.len() as u32 - 1, display_w as u32 - 1) as usize
+    };
 
-    let (mut range_min, mut range_max) = f_history
+    let mapped_height = |h_e: usize, range_min: f32, range_max: f32, max_y: u32| {
+        transform_size(
+            _f_history[h_e].1 - range_min,
+            max_y as f32,
+            range_max - range_min,
+        ) as i32
+    };
+
+    let max_y = _display_h as u32 - 20;
+
+    let (mut range_min, mut range_max) = _f_history
         .iter()
         .fold((f32::INFINITY, -f32::INFINITY), |acc, &p| {
             (acc.0.min(p.1), acc.1.max(p.1))
@@ -591,10 +651,10 @@ where
     println!("Results plot range: {:?}", (range_min, range_max));
 
     // в начале измерения происходит резкий скачек, поэтому начальные точки могут быть нерелевантны
-    // необходимо обойти f_history сзади и найти номер последней точки, где сохраняется устйчивай спад значений
+    // необходимо обойти _f_history сзади и найти номер последней точки, где сохраняется устйчивай спад значений
     let mut last_p = 0.0;
     let mut max_p_index = 0;
-    for (i, (p, _)) in f_history.iter().enumerate().rev() {
+    for (i, (p, _)) in _f_history.iter().enumerate().rev() {
         if *p <= last_p {
             max_p_index = i;
             break;
@@ -603,13 +663,13 @@ where
         };
     }
 
-    let thrend = crate::linear_regression::linear_regression(&f_history[max_p_index..]);
+    let thrend = crate::linear_regression::linear_regression(&_f_history[max_p_index..]);
 
     for line_n in 0..display_w as u32 {
         let h_e = select_mapped_point(line_n);
         let stroke_len = mapped_height(h_e, range_min, range_max, max_y);
         Pixel(
-            Point::new(line_n as i32, display_h - 1 - stroke_len),
+            Point::new(line_n as i32, _display_h - 1 - stroke_len),
             BinaryColor::On,
         )
         .draw(display)?;
@@ -619,7 +679,7 @@ where
     Line::new(
         Point::new(
             0,
-            display_h
+            _display_h
                 - 1
                 - transform_size(
                     thrend.calc(select_mapped_point(0) as f32) - range_min,
@@ -629,7 +689,7 @@ where
         ),
         Point::new(
             display_w - 1,
-            display_h
+            _display_h
                 - 1
                 - transform_size(
                     thrend.calc(select_mapped_point(display_w as u32 - 1) as f32) - range_min,
@@ -643,7 +703,7 @@ where
 
     Text::with_baseline(
         format!(" Чувст.: {:.01} Hz/mmHg ", thrend.k).as_str(),
-        Point::new(2, display_h),
+        Point::new(2, _display_h),
         MonoTextStyleBuilder::from(&small_font)
             .background_color(BinaryColor::On)
             .text_color(BinaryColor::Off)
@@ -651,6 +711,7 @@ where
         Baseline::Bottom,
     )
     .draw(display)?;
+    */
 
     display.flush()?;
 
