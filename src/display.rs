@@ -18,8 +18,6 @@ use crate::controller::{DisplayCommand, SelectedParameter};
 #[allow(unused)]
 use crate::support::print_time_of;
 
-const MIN_DYNAMIC_RANGE: f32 = 10.0;
-
 pub fn dispaly_thread<DI>(
     mut disp: GraphicsMode<DI>,
     disp_channel: crossbeam::channel::Receiver<DisplayCommand>,
@@ -51,15 +49,19 @@ where
                     Err(e) => panic!("{:?}", e),
                 }
             }
-            Ok(DisplayCommand::Result { f, p, threashold }) => {
-                match draw_result(&mut disp, f, p, threashold, f_fistory) {
-                    Ok(h) => {
-                        f_fistory = h;
-                        Ok(())
-                    }
-                    Err(e) => panic!("{:?}", e),
+            Ok(DisplayCommand::Result {
+                f,
+                p,
+                t,
+                threashold,
+                sensivity,
+            }) => match draw_result(&mut disp, f, p, t, sensivity, threashold, f_fistory) {
+                Ok(h) => {
+                    f_fistory = h;
+                    Ok(())
                 }
-            }
+                Err(e) => panic!("{:?}", e),
+            },
             Err(e) => {
                 println!("Display cmd recive error: {}", e);
                 Ok(())
@@ -506,8 +508,8 @@ where
         .unwrap_or(&800.0)
         - threashold;
 
-    if range < MIN_DYNAMIC_RANGE {
-        range = MIN_DYNAMIC_RANGE;
+    if range < threashold {
+        range = threashold;
     }
 
     let max_y = display_h as u32 - 20;
@@ -568,6 +570,8 @@ fn draw_result<DI>(
     display: &mut GraphicsMode<DI>,
     f: f32,
     p: f32,
+    t: Option<f32>,
+    sensivity: f32,
     _threashold: f32,
     _f_history: Vec<(f32, f32)>,
 ) -> Result<Vec<(f32, f32)>, display_interface::DisplayError>
@@ -618,6 +622,46 @@ where
             .build(),
     )
     .draw(display)?;
+
+    let pos = Text::with_baseline(
+        "Чувст.:",
+        Point::new(1, ((small_font.font.character_size.height + 1) * 2) as i32),
+        small_font,
+        Baseline::Top,
+    )
+    .draw(display)?;
+
+    Text::with_text_style(
+        format!("{:0.01} Hz/mmHg", sensivity).as_str(),
+        Point::new(display_w - 1, pos.y),
+        small_font,
+        TextStyleBuilder::new()
+            .alignment(Alignment::Right)
+            .baseline(Baseline::Top)
+            .build(),
+    )
+    .draw(display)?;
+
+    if let Some(t) = t {
+        let pos = Text::with_baseline(
+            "Температура:",
+            Point::new(1, ((small_font.font.character_size.height + 1) * 3) as i32),
+            small_font,
+            Baseline::Top,
+        )
+        .draw(display)?;
+
+        Text::with_text_style(
+            format!("{:0.01} *C", t).as_str(),
+            Point::new(display_w - 1, pos.y),
+            small_font,
+            TextStyleBuilder::new()
+                .alignment(Alignment::Right)
+                .baseline(Baseline::Top)
+                .build(),
+        )
+        .draw(display)?;
+    }
 
     // graph
     /*

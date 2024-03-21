@@ -49,7 +49,10 @@ fn main() {
     let settings_namespace = "minialfa";
     let nvs = match EspNvs::new(nvs_default_partition, settings_namespace, true) {
         Ok(nvs) => {
-            println!("Got namespace {:?} from default partition", settings_namespace);
+            println!(
+                "Got namespace {:?} from default partition",
+                settings_namespace
+            );
             nvs
         }
         Err(e) => panic!("Could't get namespace {:?}", e),
@@ -205,11 +208,11 @@ where
     let f_sensor = i2c_sensor::I2CSensor::new(11);
 
     let timer = timer_svc.timer(move || {
-        let p = match p_sensor.read(&mut i2c) {
-            Ok(v) => v.pressure,
+        let (p, t) = match p_sensor.read(&mut i2c) {
+            Ok(v) => (v.pressure, v.temperature),
             Err(e) => {
                 print_read_failed(p_sensor.address(), e);
-                f32::NAN
+                (f32::NAN, f32::NAN)
             }
         };
 
@@ -223,7 +226,7 @@ where
 
         let now = Instant::now();
         if let Err(e) = sensor_channel.send_deadline(
-            controller::SensorResult::SctbSensorResult { f, p },
+            controller::SensorResult::SctbSensorResult { f, p, t },
             now + Duration::from_millis(1),
         ) {
             println!("Failed to send sensor result: {}", e);

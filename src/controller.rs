@@ -24,7 +24,7 @@ pub enum EncoderCommand {
 
 #[derive(Clone, Copy, Debug)]
 pub enum SensorResult {
-    SctbSensorResult { f: f32, p: f32 },
+    SctbSensorResult { f: f32, p: f32, t: f32 },
     TyracontSensorResult { p: f32 },
 }
 
@@ -46,7 +46,9 @@ pub enum DisplayCommand {
     Result {
         f: f32,
         p: f32,
+        t: Option<f32>,
         threashold: f32,
+        sensivity: f32,
     },
 }
 
@@ -136,7 +138,7 @@ static TITLE_OPTIONS: [&'static str; 3] = ["Авто", "Ручной", "Наст
 const MIN_PREASURE: f32 = 0.01;
 const MAX_PRESSURE: f32 = 800.0;
 
-const MAX_WAIT_TIME_S: u32 = 120;
+const MAX_WAIT_TIME_S: u32 = 5 * 60; //5 min 
 
 const MIN_INTERVAL: u32 = 50;
 const MAX_INTERVAL: u32 = 200;
@@ -156,6 +158,9 @@ pub struct Controller<T: NvsPartitionId> {
 
     prev_p: f32,
     prev_f: f32,
+    prev_t: f32,
+
+    initial_point: Option<(f32, f32)>,
 
     start_waiting_time: Option<Duration>,
 
@@ -178,6 +183,9 @@ impl<T: NvsPartitionId> Controller<T> {
 
             prev_p: 0.0,
             prev_f: 0.0,
+            prev_t: 0.0,
+
+            initial_point: None,
 
             start_waiting_time: None,
 
@@ -264,50 +272,35 @@ impl<T: NvsPartitionId> Controller<T> {
         } else if let Ok(res) = self.sensors.1.try_recv() {
             //println!("Sensor result: {:?}", res);
             if self.current_state == State::Measuring {
-                let p = match res {
-                    SensorResult::SctbSensorResult { f, p } => {
+                let (p, t) = match res {
+                    SensorResult::SctbSensorResult { f, p, t } => {
                         self.prev_f = f;
+                        self.prev_t = t;
                         if self.parameters.try_use_alternative_sensor
                             && thyracont_update_timer.is_some()
                         {
-                            self.prev_p
+                            (self.prev_p, t)
                         } else {
-                            p
+                            (p, t)
                         }
                     }
                     SensorResult::TyracontSensorResult { p } => {
                         // ignore this sesor result if disabled
                         if self.parameters.try_use_alternative_sensor {
-                            Self::mbar2mm_hg(p)
+                            (Self::mbar2mm_hg(p), self.prev_t)
                         } else {
                             return;
                         }
                     }
                 };
 
+                // capture initial point
+                if self.initial_point.is_none() {
+                    self.initial_point.replace((p, self.prev_f));
+                }
+
                 if let Some(start_waiting_time) = self.start_waiting_time {
                     // Идет удержание
-
-                    if (EspSystemTime {}.now() - start_waiting_time)
-                        >= Duration::from_secs(self.parameters.wait_time_s as u64)
-                    {
-                        self.start_waiting_time.take(); // clear waiting time
-
-                        // end -> result screen
-                        self.current_state = State::Result;
-
-                        sctb_sensors_timer.cancel().unwrap();
-                        thyracont_update_timer.as_mut().map(|t| t.cancel().unwrap());
-
-                        self.display
-                            .0
-                            .send(DisplayCommand::Result {
-                                p: p,
-                                f: self.prev_f,
-                                threashold: self.parameters.threshold,
-                            })
-                            .unwrap()
-                    }
 
                     // update screen
                     self.display
@@ -318,6 +311,38 @@ impl<T: NvsPartitionId> Controller<T> {
                             threashold: self.parameters.threshold,
                         })
                         .unwrap();
+
+                    if (EspSystemTime {}.now() - start_waiting_time)
+                        >= Duration::from_secs(self.parameters.wait_time_s as u64)
+                    {
+                        println!("Waiting time expired");
+                        self.start_waiting_time.take(); // clear waiting time
+
+                        // end -> result screen
+                        self.current_state = State::Result;
+
+                        sctb_sensors_timer.cancel().unwrap();
+                        thyracont_update_timer.as_mut().map(|t| t.cancel().unwrap());
+
+                        let sensivity = if let Some(initial_point) = self.initial_point.take() {
+                            let delta_p = initial_point.0 - p;
+                            let delta_f = initial_point.1 - self.prev_f;
+                            delta_f / delta_p
+                        } else {
+                            f32::NAN
+                        };
+
+                        self.display
+                            .0
+                            .send(DisplayCommand::Result {
+                                p: p,
+                                f: self.prev_f,
+                                t: Some(t),
+                                threashold: self.parameters.threshold,
+                                sensivity,
+                            })
+                            .unwrap()
+                    }
                 } else {
                     // Only in auto mode
                     if self.title_option == TitleOptions::Auto
@@ -555,7 +580,7 @@ impl Parameters {
             .get_u8(TRY_USE_ALTERNATIVE_SENSOR)
             .map(|v| v.unwrap_or(0) != 0)
             .unwrap();
-        let wait_time_s = nvs.get_u32(WAIT_TIME_S).map(|v| v.unwrap_or(10)).unwrap();
+        let wait_time_s = nvs.get_u32(WAIT_TIME_S).map(|v| v.unwrap_or(5)).unwrap();
 
         Self {
             threshold,
