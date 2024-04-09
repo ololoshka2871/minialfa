@@ -1,0 +1,24 @@
+name: Build firmware
+on: 
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: esp32-rust
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build
+        run: |
+          cargo build --release
+
+      - uses: akkuman/gitea-release-action@v1
+        with:
+          body: This is an automatic release!
+          prerelease: true
+          files: target/xtensa-esp32-none-elf/release/minialfa
