@@ -8,6 +8,11 @@ jobs:
   build:
     runs-on: esp32-rust
     steps:
+      - name: Install Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
       - name: Clone repository
         uses: actions/checkout@v4
         with:
