@@ -21,4 +21,4 @@ jobs:
         with:
           body: This is an automatic release!
           prerelease: true
-          files: target/xtensa-esp32-none-elf/release/minialfa
+          files: target/xtensa-esp32-espidf/release/minialfa
