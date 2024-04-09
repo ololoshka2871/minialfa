@@ -8,11 +8,6 @@ jobs:
   build:
     runs-on: esp32-rust
     steps:
-      - name: Install Python
-        run: |
-          apt update
-          apt install -y python3 python3-pip python3-virtualenv
-
       - name: Clone repository
         uses: actions/checkout@v4
         with:
