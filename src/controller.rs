@@ -42,6 +42,7 @@ pub enum DisplayCommand {
         f: Option<f32>,
         p: Option<f32>,
         threashold: f32,
+        wait_time: Option<Duration>,
     },
     Result {
         f: f32,
@@ -138,7 +139,7 @@ static TITLE_OPTIONS: [&'static str; 3] = ["Авто", "Ручной", "Наст
 const MIN_PREASURE: f32 = 0.01;
 const MAX_PRESSURE: f32 = 800.0;
 
-const MAX_WAIT_TIME_S: u32 = 5 * 60; //5 min 
+const MAX_WAIT_TIME_S: u32 = 5 * 60; //5 min
 
 const MIN_INTERVAL: u32 = 50;
 const MAX_INTERVAL: u32 = 200;
@@ -300,21 +301,11 @@ impl<T: NvsPartitionId> Controller<T> {
                 }
 
                 if let Some(start_waiting_time) = self.start_waiting_time {
+                    let wait_time_s = Duration::from_secs(self.parameters.wait_time_s as u64);
+                    let now = EspSystemTime {}.now();
+
                     // Идет удержание
-
-                    // update screen
-                    self.display
-                        .0
-                        .send(DisplayCommand::Measure {
-                            f: Some(self.prev_f),
-                            p: Some(p),
-                            threashold: self.parameters.threshold,
-                        })
-                        .unwrap();
-
-                    if (EspSystemTime {}.now() - start_waiting_time)
-                        >= Duration::from_secs(self.parameters.wait_time_s as u64)
-                    {
+                    if (now - start_waiting_time) >= wait_time_s {
                         println!("Waiting time expired");
                         self.start_waiting_time.take(); // clear waiting time
 
@@ -342,6 +333,17 @@ impl<T: NvsPartitionId> Controller<T> {
                                 sensivity,
                             })
                             .unwrap()
+                    } else {
+                        // update screen
+                        self.display
+                            .0
+                            .send(DisplayCommand::Measure {
+                                f: Some(self.prev_f),
+                                p: Some(p),
+                                threashold: self.parameters.threshold,
+                                wait_time: Some(start_waiting_time + wait_time_s - now),
+                            })
+                            .unwrap();
                     }
                 } else {
                     // Only in auto mode
@@ -359,6 +361,7 @@ impl<T: NvsPartitionId> Controller<T> {
                             f: Some(self.prev_f),
                             p: Some(p),
                             threashold: self.parameters.threshold,
+                            wait_time: None,
                         })
                         .unwrap();
                 }
@@ -407,6 +410,8 @@ impl<T: NvsPartitionId> Controller<T> {
                 false
             }
             EncoderCommand::Pull => {
+                self.initial_point.take(); // clear initial point
+                self.start_waiting_time.take(); // clear waiting time
                 match self.title_option {
                     TitleOptions::Auto | TitleOptions::Manual => {
                         // enter working cycle
@@ -419,6 +424,7 @@ impl<T: NvsPartitionId> Controller<T> {
                                 f: None,
                                 p: None,
                                 threashold: self.parameters.threshold,
+                                wait_time: None,
                             })
                             .unwrap();
 

@@ -40,8 +40,21 @@ where
                 selected,
                 precision,
             }) => draw_menu(&mut disp, values, precision, selected),
-            Ok(DisplayCommand::Measure { f, p, threashold }) => {
-                match draw_measure(&mut disp, f, p, threashold, &mut history, f_fistory) {
+            Ok(DisplayCommand::Measure {
+                f,
+                p,
+                threashold,
+                wait_time,
+            }) => {
+                match draw_measure(
+                    &mut disp,
+                    f,
+                    p,
+                    threashold,
+                    &mut history,
+                    f_fistory,
+                    wait_time,
+                ) {
                     Ok(h) => {
                         f_fistory = h;
                         Ok(())
@@ -463,10 +476,13 @@ fn draw_measure<DI>(
     threashold: f32,
     history: &mut VecDeque<f32>,
     mut f_history: Vec<(f32, f32)>,
+    wait_time: Option<core::time::Duration>,
 ) -> Result<Vec<(f32, f32)>, display_interface::DisplayError>
 where
     DI: display_interface::WriteOnlyDataCommand,
 {
+    const PLOT_Y_OFFSER: i32 = 20;
+
     display.clear();
 
     let small_font = MonoTextStyleBuilder::new()
@@ -508,11 +524,11 @@ where
         .unwrap_or(&800.0)
         - threashold;
 
-    if range < threashold {
-        range = threashold;
+    if range < threashold * 2.0 {
+        range = threashold * 2.0;
     }
 
-    let max_y = display_h as u32 - 20;
+    let max_y = (display_h - PLOT_Y_OFFSER) as u32;
 
     let line_style = PrimitiveStyle::with_stroke(BinaryColor::On, 1);
     for line_n in 0..display_w {
@@ -560,6 +576,22 @@ where
             .build(),
     )
     .draw(display)?;
+
+    if let Some(wait_time) = wait_time {
+        Text::with_text_style(
+            format!("{:} c.", wait_time.as_secs()).as_str(),
+            Point::new(
+                display_w - 2,
+                2 + small_font.font.character_size.height as i32,
+            ),
+            small_font_selected,
+            TextStyleBuilder::new()
+                .alignment(Alignment::Right)
+                .baseline(Baseline::Top)
+                .build(),
+        )
+        .draw(display)?;
+    }
 
     display.flush()?;
 
